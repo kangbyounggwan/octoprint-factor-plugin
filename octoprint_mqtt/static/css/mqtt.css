@@ -108,3 +108,8 @@
     background-color: #204d74;
     border-color: #122b40;
 }
+
+
+#settings_plugin_factor_mqtt h4 { margin-top: 0; }
+#settings_plugin_factor_mqtt .m-t-sm { margin-top: 10px; }
+#settings_plugin_factor_mqtt { padding: 0 15px; } /* 좌우 패딩으로 잘림 방지 */
