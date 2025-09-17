@@ -6,7 +6,7 @@ from octoprint.events import Events
 
 __plugin_name__ = "MQTT-Plugin from FACTOR"
 __plugin_pythoncompat__ = ">=3.8,<4"
-__plugin_version__ = "1.0.1"
+__plugin_version__ = "1.0.3"
 
 class MqttPlugin(octoprint.plugin.SettingsPlugin,
                  octoprint.plugin.AssetPlugin,
