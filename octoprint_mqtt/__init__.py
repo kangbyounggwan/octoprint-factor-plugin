@@ -159,7 +159,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         
         import json
         topic = f"{topic_prefix}/temperature"
-        message = json.du이름으으mps(payload)
+        message = json.dumps(payload)
         self._publish_message(topic, message)
     
     def _publish_gcode(self, payload, topic_prefix):
@@ -207,10 +207,10 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             import json
             import paho.mqtt.client as mqtt
             
-            data = json.loads(self.request.data)
+            data = request.get_json(force=True, silent=True) or {}
             
             # 테스트용 클라이언트 생성
-            test_client = mqtt.Client()
+            test_client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION1)
             
             # 인증 정보 설정
             if data.get("broker_username"):
