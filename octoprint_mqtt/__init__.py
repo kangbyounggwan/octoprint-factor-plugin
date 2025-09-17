@@ -159,7 +159,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         
         import json
         topic = f"{topic_prefix}/temperature"
-        message = json.dumps(payload)
+        message = json.du이름으으mps(payload)
         self._publish_message(topic, message)
     
     def _publish_gcode(self, payload, topic_prefix):
@@ -261,7 +261,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-__plugin_name__ = "MQTT Plugin"
+__plugin_name__ = "MQTT-Plugin from FACTOR"
 
 def __plugin_load__():
     global __plugin_implementation__

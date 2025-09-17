@@ -1,4 +1,4 @@
-# OctoPrint MQTT Plugin
+# MQTT-Plugin from FACTOR
 
 옥토프린터용 MQTT 통합 플러그인입니다. 이 플러그인을 통해 옥토프린터의 상태 정보를 MQTT 브로커로 실시간 전송할 수 있습니다.
 
@@ -20,10 +20,10 @@
 cd ~/.octoprint/plugins/
 
 # 플러그인 클론
-git clone https://github.com/yourusername/octoprint-mqtt.git
+git clone https://github.com/kangbyounggwan/octoprint-factor-plugin.git
 
 # 플러그인 디렉토리로 이동
-cd octoprint-mqtt/
+cd octoprint-factor-plugin/
 
 # 의존성 설치
 pip install -r requirements.txt
@@ -36,13 +36,13 @@ pip install .
 
 1. OctoPrint 웹 인터페이스에서 설정 > 플러그인 관리자로 이동
 2. "플러그인 추가" 버튼 클릭
-3. 플러그인 URL 입력: `https://github.com/yourusername/octoprint-mqtt/archive/master.zip`
+3. 플러그인 URL 입력: `https://github.com/kangbyounggwan/octoprint-factor-plugin/archive/main.zip`
 4. 설치 완료 후 OctoPrint 재시작
 
 ## 설정 방법
 
 1. OctoPrint 웹 인터페이스에서 설정 > 플러그인으로 이동
-2. "MQTT Plugin" 설정 페이지 열기
+2. "MQTT-Plugin from FACTOR" 설정 페이지 열기
 3. MQTT 브로커 정보 입력:
    - **브로커 호스트**: MQTT 브로커 주소 (예: localhost, 192.168.1.100)
    - **브로커 포트**: MQTT 브로커 포트 (기본값: 1883)
@@ -141,9 +141,9 @@ octoprint/gcode
 
 ## 개발자 정보
 
-- **개발자**: Your Name
-- **이메일**: your.email@example.com
-- **GitHub**: https://github.com/yourusername/octoprint-mqtt
+- **개발자**: FACTOR
+- **이메일**: factor@example.com
+- **GitHub**: https://github.com/kangbyounggwan/octoprint-factor-plugin
 
 ## 라이선스
 
