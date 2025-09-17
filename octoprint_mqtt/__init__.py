@@ -29,13 +29,13 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             broker_port=1883,
             broker_username="",
             broker_password="",
-            broker_topic_prefix="octoprint",
-            qos_level=1,
-            retain_messages=True,
+            topic_prefix="octoprint",   # JS와 일치!
+            qos_level=0,
+            retain_messages=False,
             publish_status=True,
             publish_progress=True,
             publish_temperature=True,
-            publish_gcode=True
+            publish_gcode=False,
         )
     
     def get_settings_version(self):
