@@ -250,7 +250,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         username = data.get("broker_username")
         pw_provided = bool(data.get("broker_password"))
         do_publish = bool(data.get("publish", False))
-        topic = data.get("test_topic") or f"{self._settings.get(['broker_topic_prefix'])}/test"
+        topic = data.get("test_topic") or f"{self._settings.get(['topic_prefix'])}/test"
 
         # --- 시작 로그 (민감정보 마스킹) ---
         self._logger.info(
