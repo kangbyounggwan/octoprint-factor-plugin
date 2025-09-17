@@ -2,6 +2,7 @@
 import json
 from flask import request  # Blueprint에서 사용
 import octoprint.plugin
+from octoprint.plugin import BlueprintPlugin
 from octoprint.events import Events
 
 __plugin_name__ = "MQTT-Plugin from FACTOR"
@@ -203,7 +204,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
     
     ##~~ BlueprintPlugin mixin
     
-    @octoprint.plugin.BlueprintPlugin.route("/status", methods=["GET"])
+    @BlueprintPlugin.route("/status", methods=["GET"])
     def get_mqtt_status(self):
         """MQTT 연결 상태를 반환합니다."""
         return {
@@ -212,7 +213,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             "broker_port": self._settings.get(["broker_port"])
         }
     
-    @octoprint.plugin.BlueprintPlugin.route("/test", methods=["POST"])
+    @BlueprintPlugin.route("/test", methods=["POST"])
     def test_mqtt_connection(self):
         """MQTT 연결을 테스트하고 로그를 남깁니다."""
         import time, json
