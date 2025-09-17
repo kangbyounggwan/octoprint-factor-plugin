@@ -119,12 +119,4 @@ $(function() {
         dependencies: ["settingsViewModel", "loginStateViewModel"],
         elements: ["#settings_plugin_mqtt"]
     });
-    
-    // 연결 테스트 버튼 이벤트 바인딩
-    $(document).on("click", "#mqtt_test_connection", function() {
-        var viewModel = ko.dataFor(document.getElementById("settings_plugin_mqtt"));
-        if (viewModel && viewModel.testConnection) {
-            viewModel.testConnection();
-        }
-    });
 });
