@@ -8,7 +8,8 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
                  octoprint.plugin.StartupPlugin,
                  octoprint.plugin.ShutdownPlugin,
                  octoprint.plugin.EventHandlerPlugin,
-                 octoprint.plugin.BlueprintPlugin):
+                 octoprint.plugin.BlueprintPlugin,
+                 octoprint.plugin.SoftwareUpdatePlugin):
     
     def __init__(self):
         super().__init__()
@@ -260,8 +261,24 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
                 
         except Exception as e:
             return {"success": False, "error": str(e)}
+    
+    ##~~ SoftwareUpdatePlugin mixin
+    
+    def get_update_information(self):
+        return {
+            "mqtt": {
+                "displayName": "MQTT-Plugin from FACTOR",
+                "displayVersion": self._plugin_version,
+                "type": "github_release",
+                "user": "kangbyounggwan",
+                "repo": "octoprint-factor-plugin",
+                "current": self._plugin_version,
+                "pip": "https://github.com/kangbyounggwan/octoprint-factor-plugin/archive/{target_version}.zip",
+            }
+        }
 
 __plugin_name__ = "MQTT-Plugin from FACTOR"
+__plugin_pythoncompat__ = ">=3.8,<4"
 
 def __plugin_load__():
     global __plugin_implementation__
