@@ -56,11 +56,14 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
     
     ##~~ TemplatePlugin mixin
     
+
     def get_template_configs(self):
-        return [
-            dict(type="settings", template="mqtt_settings.jinja2", custom_bindings=False)
-        ]
-    
+        return [dict(
+            type="settings",
+            name="FACTOR MQTT",
+            template="mqtt_settings.jinja2",
+            custom_bindings=True   # ← 여기 꼭 True
+        )]
     ##~~ StartupPlugin mixin
     
     def on_startup(self, host, port):
