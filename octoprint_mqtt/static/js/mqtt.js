@@ -19,7 +19,7 @@ $(function () {
        self.publishTemperature = ko.observable(false);
        self.publishGcode = ko.observable(false);
        self.publishSnapshot = ko.observable(false);
-       self.snapshotInterval = ko.observable(1.0);
+       self.periodicInterval = ko.observable(1.0);
   
       self.connectionStatus = ko.observable("연결 확인 중...");
       self.isConnected = ko.observable(false);
@@ -48,7 +48,7 @@ $(function () {
          self.publishTemperature(!!self.pluginSettings.publish_temperature());
          self.publishGcode(!!self.pluginSettings.publish_gcode());
          self.publishSnapshot(!!self.pluginSettings.publish_snapshot());
-         self.snapshotInterval(parseFloat(self.pluginSettings.snapshot_interval()) || 1.0);
+         self.periodicInterval(parseFloat(self.pluginSettings.periodic_interval()) || 1.0);
   
         self.checkConnectionStatus();
       };
@@ -58,18 +58,18 @@ $(function () {
         if (!self.pluginSettings) return;
   
         self.pluginSettings.broker_host(self.brokerHost());
-        self.pluginSettings.broker_port(parseInt(self.brokerPort() || 0, 10));
+        self.pluginSettings.broker_port(parseInt(self.brokerPort() || 1883, 10));
         self.pluginSettings.broker_username(self.brokerUsername());
         self.pluginSettings.broker_password(self.brokerPassword());
         self.pluginSettings.topic_prefix(self.topicPrefix());
-        self.pluginSettings.qos_level(parseInt(self.qosLevel() || 0, 10));
+        self.pluginSettings.qos_level(parseInt(self.qosLevel() || 1, 10));
         self.pluginSettings.retain_messages(!!self.retainMessages());
         self.pluginSettings.publish_status(!!self.publishStatus());
         self.pluginSettings.publish_progress(!!self.publishProgress());
          self.pluginSettings.publish_temperature(!!self.publishTemperature());
          self.pluginSettings.publish_gcode(!!self.publishGcode());
          self.pluginSettings.publish_snapshot(!!self.publishSnapshot());
-         self.pluginSettings.snapshot_interval(parseFloat(self.snapshotInterval()) || 1.0);
+         self.pluginSettings.periodic_interval(parseFloat(self.periodicInterval()) || 1.0);
   
         // 저장 후 플러그인에서 _connect_mqtt 재시도하므로 조금 기다렸다 상태 재확인
         setTimeout(self.checkConnectionStatus, 1000);

@@ -2,12 +2,13 @@
 import json
 from flask import request  # Blueprint에서 사용
 import octoprint.plugin
+from octoprint.util import RepeatedTimer
 
 
 
 __plugin_name__ = "MQTT-Plugin from FACTOR"
 __plugin_pythoncompat__ = ">=3.8,<4"
-__plugin_version__ = "1.0.7"
+__plugin_version__ = "1.0.9"
 __plugin_identifier__ = "factor_mqtt"
 
 class MqttPlugin(octoprint.plugin.SettingsPlugin,
@@ -22,7 +23,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         super().__init__()
         self.mqtt_client = None
         self.is_connected = False
-        self.snapshot_timer = None
+        self._snapshot_timer = None
     
     ##~~ SettingsPlugin mixin
     
@@ -40,7 +41,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             publish_temperature=True,
             publish_gcode=False,
             publish_snapshot=True,
-            snapshot_interval=1.0
+            periodic_interval=1.0
             
         )
     
@@ -51,9 +52,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         octoprint.plugin.SettingsPlugin.on_settings_save(self, data)
         self._disconnect_mqtt()
         self._connect_mqtt()
-        # 설정 변경 시 스냅샷 타이머 재시작
-        if self.is_connected:
-            self._start_snapshot_timer()
+        # 타이머는 연결 성공 시 자동으로 시작됨
     
     ##~~ AssetPlugin mixin
     
@@ -70,10 +69,13 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             self._log_api_endpoints(host, port)
         except Exception as e:
             self._logger.warning("엔드포인트 로그 중 오류: %s", e)
-
+    
     def on_after_startup(self):
-        # 필요시 추가 로그
+        """시작 후 초기화 작업"""
+        # 더 이상 busy-wait 금지. 필요하면 그냥 타이머를 미리 켜두고
+        # tick에서 is_connected를 확인하게 해도 됩니다.
         pass
+
 
     # --- 여기부터 유틸 메서드 추가 ---
     def _log_api_endpoints(self, host: str, port: int):
@@ -170,21 +172,20 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             self.is_connected = False
             self._logger.info("MQTT 클라이언트 연결이 종료되었습니다.")
     
-    def _on_mqtt_connect(self, client, userdata, flags, rc, properties=None):
-        if rc == 0:
-            self.is_connected = True
-            self._logger.info("MQTT 브로커에 성공적으로 연결되었습니다.")
-            # 연결 성공 시 스냅샷 타이머 시작
-            self._start_snapshot_timer()
+    def _on_mqtt_connect(self, client, userdata, flags, rc, properties=None, *args, **kwargs):
+        self.is_connected = (rc == 0)
+        if self.is_connected:
+            self._logger.info("MQTT 브로커 연결 OK")
+            self._start_snapshot_timer()     # ✅ 여기서 시작
         else:
-            self.is_connected = False
-            self._logger.error(f"MQTT 연결 실패. 코드: {rc}")
+            self._logger.error(f"MQTT 연결 실패 rc={rc}")
     
-    def _on_mqtt_disconnect(self, client, userdata, rc, properties=None):
+    def _on_mqtt_disconnect(self, client, userdata, rc, properties=None, *args, **kwargs):
         self.is_connected = False
-        self._logger.info("MQTT 브로커와의 연결이 끊어졌습니다.")
-        # 연결 해제 시 스냅샷 타이머 중지
-        self._stop_snapshot_timer()
+        self._logger.warning(f"MQTT 연결 끊김 rc={rc}")
+        # 타이머는 유지해도 되고 멈춰도 됨. 유지하면 재연결 후 자동 퍼블리시됨.
+        # 멈추고 싶다면 아래 주석 해제:
+        # self._stop_snapshot_timer()
     
     def _on_mqtt_publish(self, client, userdata, mid, properties=None):
         self._logger.debug(f"MQTT 메시지 발행 완료. 메시지 ID: {mid}")
@@ -210,9 +211,8 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             if self.mqtt_client.is_connected():
                 return True
             else:
-                # 연결되지 않은 경우 재연결 시도
-                self._logger.info("MQTT 연결이 끊어져 재연결을 시도합니다.")
-                self._connect_mqtt()
+                # 연결되지 않은 경우 로그만 출력 (재연결은 자동으로 처리됨)
+                self._logger.debug("MQTT 연결이 끊어져 있습니다.")
                 return False
         except Exception as e:
             self._logger.error(f"MQTT 연결 상태 확인 중 오류: {e}")
@@ -459,48 +459,32 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
 
     def _start_snapshot_timer(self):
         """스냅샷 전송 타이머를 시작합니다."""
-        if self.snapshot_timer:
-            self._stop_snapshot_timer()
-        
-        if not self._settings.get(["publish_snapshot"]):
+        if self._snapshot_timer:  # 중복 방지
             return
-            
-        interval = self._settings.get(["snapshot_interval"]) or 1.0
-        self.snapshot_timer = self._plugin_manager.get_plugin("timelapse")._timer if hasattr(self._plugin_manager.get_plugin("timelapse"), "_timer") else None
-        
-        # OctoPrint의 타이머 시스템 사용
-        import threading
-        def timer_callback():
-            if self.is_connected and self.mqtt_client and self._settings.get(["publish_snapshot"]):
-                self._periodic_tick()
-            if self.snapshot_timer:
-                self.snapshot_timer = threading.Timer(interval, timer_callback)
-                self.snapshot_timer.start()
-        
-        self.snapshot_timer = threading.Timer(interval, timer_callback)
-        self.snapshot_timer.start()
-        self._logger.info("스냅샷 타이머 시작: %.1f초 간격", interval)
-    
+        interval = float(self._settings.get(["periodic_interval"]) or 1.0)
+        self._snapshot_timer = RepeatedTimer(interval, self._snapshot_tick, run_first=True)
+        self._snapshot_timer.start()
+        self._logger.info(f"[FACTOR MQTT] snapshot timer started every {interval}s")
+
     def _stop_snapshot_timer(self):
         """스냅샷 전송 타이머를 중지합니다."""
-        if self.snapshot_timer:
-            self.snapshot_timer.cancel()
-            self.snapshot_timer = None
-            self._logger.info("스냅샷 타이머 중지")
+        if self._snapshot_timer:
+            self._snapshot_timer.cancel()
+            self._snapshot_timer = None
+            self._logger.info("[FACTOR MQTT] snapshot timer stopped")
 
-    def _periodic_tick(self):
-        """주기적으로 스냅샷을 MQTT로 전송합니다."""
-        # 연결 상태 확인 후 전송
-        if not self._check_mqtt_connection_status():
+    def _snapshot_tick(self):
+        """스냅샷 타이머 콜백 함수"""
+        # 연결되어 있지 않으면 아무것도 안 함 (MQTT 재연결을 기다림)
+        if not (self.is_connected and self.mqtt_client):
             return
-        
+        # 스냅샷 만들어 퍼블리시 (이미 만들었던 함수 재사용)
         try:
-            topic = f"{self._settings.get(['topic_prefix']) or 'octoprint'}/snapshot"
-            snapshot = self._make_snapshot()
-            self._publish_message(topic, json.dumps(snapshot))
-            self._logger.debug("스냅샷 전송 완료: %s", topic)
+            payload = self._make_snapshot()
+            topic = f"{self._settings.get(['topic_prefix']) or 'octoprint'}/status"
+            self._publish_message(topic, json.dumps(payload))
         except Exception as e:
-            self._logger.error("스냅샷 전송 중 오류: %s", e)
+            self._logger.debug(f"snapshot tick error: {e}")
 
 
 def __plugin_load__():
