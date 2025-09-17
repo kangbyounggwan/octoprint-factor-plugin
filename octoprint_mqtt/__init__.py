@@ -14,9 +14,20 @@ __plugin_identifier__ = "factor_mqtt"
         
 def _as_code(x):
     try:
+        v = getattr(x, "value", None)
+        if isinstance(v, int):
+            return v
         return int(x)
     except Exception:
-        return str(x) if x is not None else None
+        s = (str(x) if x is not None else "").strip().lower()
+        if s in ("success", "normal disconnection"):
+            return 0
+        import re
+        m = re.search(r"(\d+)", s)
+        return int(m.group(1)) if m else -1
+
+
+
 
 class MqttPlugin(octoprint.plugin.SettingsPlugin,
                  octoprint.plugin.AssetPlugin,
