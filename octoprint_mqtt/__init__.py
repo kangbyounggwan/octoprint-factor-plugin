@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
-
+import json
+from flask import request  # Blueprint에서 사용
 import octoprint.plugin
+from octoprint.events import Events
+
+__plugin_name__ = "MQTT-Plugin from FACTOR"
+__plugin_pythoncompat__ = ">=3.8,<4"
+__plugin_version__ = "1.0.1"
 
 class MqttPlugin(octoprint.plugin.SettingsPlugin,
                  octoprint.plugin.AssetPlugin,
@@ -8,8 +14,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
                  octoprint.plugin.StartupPlugin,
                  octoprint.plugin.ShutdownPlugin,
                  octoprint.plugin.EventHandlerPlugin,
-                 octoprint.plugin.BlueprintPlugin,
-                 octoprint.plugin.SoftwareUpdatePlugin):
+                 octoprint.plugin.BlueprintPlugin):
     
     def __init__(self):
         super().__init__()
@@ -89,7 +94,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         try:
             import paho.mqtt.client as mqtt
             
-            self.mqtt_client = mqtt.Client()
+            self.mqtt_client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
             
             # 인증 정보 설정
             username = self._settings.get(["broker_username"])
@@ -121,7 +126,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             self.is_connected = False
             self._logger.info("MQTT 클라이언트 연결이 종료되었습니다.")
     
-    def _on_mqtt_connect(self, client, userdata, flags, rc):
+    def _on_mqtt_connect(self, client, userdata, flags, rc, properties=None):
         if rc == 0:
             self.is_connected = True
             self._logger.info("MQTT 브로커에 성공적으로 연결되었습니다.")
@@ -129,11 +134,11 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             self.is_connected = False
             self._logger.error(f"MQTT 연결 실패. 코드: {rc}")
     
-    def _on_mqtt_disconnect(self, client, userdata, rc):
+    def _on_mqtt_disconnect(self, client, userdata, rc, properties=None):
         self.is_connected = False
         self._logger.info("MQTT 브로커와의 연결이 끊어졌습니다.")
     
-    def _on_mqtt_publish(self, client, userdata, mid):
+    def _on_mqtt_publish(self, client, userdata, mid, properties=None):
         self._logger.debug(f"MQTT 메시지 발행 완료. 메시지 ID: {mid}")
     
     def _publish_status(self, payload, topic_prefix):
@@ -211,7 +216,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             data = request.get_json(force=True, silent=True) or {}
             
             # 테스트용 클라이언트 생성
-            test_client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION1)
+            test_client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
             
             # 인증 정보 설정
             if data.get("broker_username"):
@@ -220,14 +225,14 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             # 연결 결과를 저장할 변수
             connection_result = {"success": False, "error": None}
             
-            def on_connect(client, userdata, flags, rc):
+            def on_connect(client, userdata, flags, rc, properties=None):
                 if rc == 0:
                     connection_result["success"] = True
                     client.disconnect()
                 else:
                     connection_result["error"] = f"연결 실패 (코드: {rc})"
             
-            def on_disconnect(client, userdata, rc):
+            def on_disconnect(client, userdata, rc, properties=None):
                 pass
             
             test_client.on_connect = on_connect
@@ -262,30 +267,25 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         except Exception as e:
             return {"success": False, "error": str(e)}
     
-    ##~~ SoftwareUpdatePlugin mixin
-    
+
     def get_update_information(self):
         return {
-            "mqtt": {
+            "factor_mqtt": {
                 "displayName": "MQTT-Plugin from FACTOR",
-                "displayVersion": self._plugin_version,
+                "displayVersion": __plugin_version__,
                 "type": "github_release",
                 "user": "kangbyounggwan",
                 "repo": "octoprint-factor-plugin",
-                "current": self._plugin_version,
+                "current": __plugin_version__,
                 "pip": "https://github.com/kangbyounggwan/octoprint-factor-plugin/archive/{target_version}.zip",
             }
         }
-
-__plugin_name__ = "MQTT-Plugin from FACTOR"
-__plugin_pythoncompat__ = ">=3.8,<4"
-
 def __plugin_load__():
     global __plugin_implementation__
     __plugin_implementation__ = MqttPlugin()
 
     global __plugin_hooks__
     __plugin_hooks__ = {
-        "octoprint.plugin.softwareupdate.check_config": __plugin_implementation__.get_update_information,
-        
+        "octoprint.plugin.softwareupdate.check_config":
+            __plugin_implementation__.get_update_information
     }
