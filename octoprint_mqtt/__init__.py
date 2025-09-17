@@ -191,14 +191,16 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             self._logger.info("MQTT 클라이언트 연결이 종료되었습니다.")
     
     def _on_mqtt_connect(self, client, userdata, flags, rc, properties=None, *args, **kwargs):
-        self.is_connected = (rc == 0)
+        rc_i = _as_code(rc)
+        self.is_connected = (rc_i == 0)
         if self.is_connected:
             self._logger.info("MQTT 브로커 연결 OK")
             self._start_snapshot_timer()     # ✅ 여기서 시작
         else:
             self._logger.error(f"MQTT 연결 실패 rc={rc}")
-    
+
     def _on_mqtt_disconnect(self, client, userdata, rc, properties=None, *args, **kwargs):
+        rc_i = _as_code(rc)
         self.is_connected = False
         self._logger.warning(f"MQTT 연결 끊김 rc={rc}")
         # 타이머는 유지해도 되고 멈춰도 됨. 유지하면 재연결 후 자동 퍼블리시됨.
