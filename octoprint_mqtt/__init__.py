@@ -368,7 +368,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             # 테스트 성공 후 프린터가 연결되어 있으면 스냅샷 전송
             if self._printer.is_operational():
                 try:
-                    self._periodic_tick()
+                    self._snapshot_tick()
                     self._logger.info("[TEST] 스냅샷 전송 완료")
                 except Exception as e:
                     self._logger.warning("[TEST] 스냅샷 전송 실패: %s", e)
