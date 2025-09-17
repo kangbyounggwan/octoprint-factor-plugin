@@ -7,7 +7,7 @@ import octoprint.plugin
 
 __plugin_name__ = "MQTT-Plugin from FACTOR"
 __plugin_pythoncompat__ = ">=3.8,<4"
-__plugin_version__ = "1.0.6"
+__plugin_version__ = "1.0.7"
 __plugin_identifier__ = "factor_mqtt"
 
 class MqttPlugin(octoprint.plugin.SettingsPlugin,
@@ -145,14 +145,19 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             self.mqtt_client.on_connect = self._on_mqtt_connect
             self.mqtt_client.on_disconnect = self._on_mqtt_disconnect
             self.mqtt_client.on_publish = self._on_mqtt_publish
+            self.mqtt_client.on_log = self._on_mqtt_log
             
-            # 연결
+            # 재연결 설정
+            self.mqtt_client.reconnect_delay_set(min_delay=1, max_delay=120)
+            
+            # 비동기 연결
             host = self._settings.get(["broker_host"])
-            port = self._settings.get(["broker_port"])
-            self.mqtt_client.connect(host, port, 60)
-            self.mqtt_client.loop_start()
+            port = int(self._settings.get(["broker_port"]))
+            self._logger.info(f"MQTT 비동기 연결 시도: {host}:{port}")
             
-            self._logger.info(f"MQTT 클라이언트가 {host}:{port}에 연결을 시도합니다.")
+            # connect_async로 비동기 연결 시작
+            self.mqtt_client.connect_async(host, port, 60)
+            self.mqtt_client.loop_start()
             
         except Exception as e:
             self._logger.error(f"MQTT 연결 실패: {e}")
@@ -183,6 +188,35 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
     
     def _on_mqtt_publish(self, client, userdata, mid, properties=None):
         self._logger.debug(f"MQTT 메시지 발행 완료. 메시지 ID: {mid}")
+    
+    def _on_mqtt_log(self, client, userdata, level, buf):
+        """MQTT 로그 콜백 - 연결 상태 디버깅용"""
+        if level == 1:  # DEBUG level
+            self._logger.debug(f"MQTT: {buf}")
+        elif level == 2:  # INFO level
+            self._logger.info(f"MQTT: {buf}")
+        elif level == 4:  # WARNING level
+            self._logger.warning(f"MQTT: {buf}")
+        elif level == 8:  # ERROR level
+            self._logger.error(f"MQTT: {buf}")
+    
+    def _check_mqtt_connection_status(self):
+        """MQTT 연결 상태를 확인합니다."""
+        if not self.mqtt_client:
+            return False
+        
+        try:
+            # 연결 상태 확인
+            if self.mqtt_client.is_connected():
+                return True
+            else:
+                # 연결되지 않은 경우 재연결 시도
+                self._logger.info("MQTT 연결이 끊어져 재연결을 시도합니다.")
+                self._connect_mqtt()
+                return False
+        except Exception as e:
+            self._logger.error(f"MQTT 연결 상태 확인 중 오류: {e}")
+            return False
     
     def _publish_status(self, payload, topic_prefix):
         if not self._settings.get(["publish_status"]):
@@ -456,7 +490,8 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
 
     def _periodic_tick(self):
         """주기적으로 스냅샷을 MQTT로 전송합니다."""
-        if not (self.is_connected and self.mqtt_client):
+        # 연결 상태 확인 후 전송
+        if not self._check_mqtt_connection_status():
             return
         
         try:
