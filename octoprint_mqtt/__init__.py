@@ -11,6 +11,13 @@ __plugin_pythoncompat__ = ">=3.8,<4"
 __plugin_version__ = "1.0.9"
 __plugin_identifier__ = "factor_mqtt"
 
+        
+def _as_code(x):
+    try:
+        return int(x)
+    except Exception:
+        return str(x) if x is not None else None
+
 class MqttPlugin(octoprint.plugin.SettingsPlugin,
                  octoprint.plugin.AssetPlugin,
                  octoprint.plugin.TemplatePlugin,
@@ -282,12 +289,6 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             "broker_host": self._settings.get(["broker_host"]),
             "broker_port": self._settings.get(["broker_port"])
         }
-        
-    def _as_code(x):
-        try:
-            return int(x)
-        except Exception:
-            return str(x) if x is not None else None
 
     @octoprint.plugin.BlueprintPlugin.route("/test", methods=["POST"])
     def test_mqtt_connection(self):
