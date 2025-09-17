@@ -208,64 +208,91 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
     
     @octoprint.plugin.BlueprintPlugin.route("/test", methods=["POST"])
     def test_mqtt_connection(self):
-        """MQTT 연결을 테스트합니다."""
+        """MQTT 연결을 테스트하고 로그를 남깁니다."""
+        import time, json
+        import paho.mqtt.client as mqtt
+
+        data = request.get_json(force=True, silent=True) or {}
+        host = data.get("broker_host", "localhost")
+        port = int(data.get("broker_port", 1883))
+        username = data.get("broker_username")
+        pw_provided = bool(data.get("broker_password"))
+        do_publish = bool(data.get("publish", False))
+        topic = data.get("test_topic") or f"{self._settings.get(['broker_topic_prefix'])}/test"
+
+        # --- 시작 로그 (민감정보 마스킹) ---
+        self._logger.info(
+            "[TEST] MQTT 연결 테스트 시작 host=%s port=%s user=%s pw=%s publish=%s topic=%s",
+            host, port, (username or "<none>"), ("***" if pw_provided else "<none>"),
+            do_publish, topic
+        )
+
+        # 테스트 클라이언트 생성 + paho 내부 로그 연결(선택)
+        client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
         try:
-            import json
-            import paho.mqtt.client as mqtt
-            
-            data = request.get_json(force=True, silent=True) or {}
-            
-            # 테스트용 클라이언트 생성
-            test_client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
-            
-            # 인증 정보 설정
-            if data.get("broker_username"):
-                test_client.username_pw_set(data["broker_username"], data.get("broker_password", ""))
-            
-            # 연결 결과를 저장할 변수
-            connection_result = {"success": False, "error": None}
-            
-            def on_connect(client, userdata, flags, rc, properties=None):
-                if rc == 0:
-                    connection_result["success"] = True
-                    client.disconnect()
-                else:
-                    connection_result["error"] = f"연결 실패 (코드: {rc})"
-            
-            def on_disconnect(client, userdata, rc, properties=None):
-                pass
-            
-            test_client.on_connect = on_connect
-            test_client.on_disconnect = on_disconnect
-            
-            # 연결 시도
-            host = data.get("broker_host", "localhost")
-            port = int(data.get("broker_port", 1883))
-            
-            test_client.connect(host, port, 10)
-            test_client.loop_start()
-            
-            # 연결 결과 대기 (최대 5초)
-            import time
-            timeout = 5
-            start_time = time.time()
-            
-            while time.time() - start_time < timeout:
-                if connection_result["success"] or connection_result["error"]:
-                    break
-                time.sleep(0.1)
-            
-            test_client.loop_stop()
-            test_client.disconnect()
-            
-            if connection_result["success"]:
-                return {"success": True, "message": "연결 테스트 성공"}
+            client.enable_logger(self._logger.getChild("paho"))  # paho 내부 로그도 OctoPrint 로그로
+        except Exception:
+            pass
+
+        if username:
+            client.username_pw_set(username, data.get("broker_password", ""))
+
+        result = {"success": False, "error": None, "rc": None, "rtt_ms": None}
+        t0 = time.time()
+
+        def on_connect(c, u, flags, rc, properties=None):
+            result["rc"] = rc
+            if rc == 0:
+                self._logger.info("[TEST] MQTT CONNECT OK (rc=0)")
+                if do_publish:
+                    payload = json.dumps({"plugin": "factor_mqtt", "status": "ok", "ts": time.time()})
+                    info = c.publish(topic, payload, qos=0, retain=False)
+                    info.wait_for_publish(timeout=3)
+                    if info.is_published():
+                        self._logger.info("[TEST] MQTT PUBLISH OK topic=%s", topic)
+                    else:
+                        self._logger.warning("[TEST] MQTT PUBLISH TIMEOUT topic=%s", topic)
+                result["success"] = True
             else:
-                error_msg = connection_result["error"] or "연결 시간 초과"
-                return {"success": False, "error": error_msg}
-                
+                self._logger.error("[TEST] MQTT CONNECT FAIL rc=%s", rc)
+                result["error"] = f"연결 실패 (코드: {rc})"
+            c.disconnect()
+
+        def on_disconnect(c, u, rc, properties=None):
+            self._logger.info("[TEST] MQTT DISCONNECT rc=%s", rc)
+
+        client.on_connect = on_connect
+        client.on_disconnect = on_disconnect
+
+        try:
+            self._logger.info("[TEST] MQTT connect() 시도...")
+            client.connect(host, port, 10)
+            client.loop_start()
+
+            # 최대 6초 대기
+            timeout = 6
+            while time.time() - t0 < timeout and not (result["success"] or result["error"]):
+                time.sleep(0.1)
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            result["error"] = str(e)
+            self._logger.exception("[TEST] 예외 발생")
+        finally:
+            client.loop_stop()
+            try:
+                client.disconnect()
+            except Exception:
+                pass
+
+        result["rtt_ms"] = int((time.time() - t0) * 1000)
+
+        if result["success"]:
+            self._logger.info("[TEST] MQTT 연결 테스트 성공 rtt=%sms", result["rtt_ms"])
+            return {"success": True, "message": "연결 테스트 성공", "rtt_ms": result["rtt_ms"]}
+        else:
+            err = result["error"] or "연결 시간 초과"
+            self._logger.error("[TEST] MQTT 연결 테스트 실패: %s", err)
+            return {"success": False, "error": err, "rc": result["rc"], "rtt_ms": result["rtt_ms"]}
+
     
 
     def get_update_information(self):
