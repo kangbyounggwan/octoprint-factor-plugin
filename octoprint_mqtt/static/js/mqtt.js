@@ -26,11 +26,11 @@ $(function () {
       self.onBeforeBinding = function () {
         // 🔸 이 시점에 settings가 준비됨
         var s = self.settingsViewModel && self.settingsViewModel.settings;
-        if (!s || !s.plugins || !s.plugins.factor_mqtt) {
-          console.warn("factor_mqtt settings not ready");
+        if (!s || !s.plugins || !s.plugins.octoprint_factor_mqtt) {
+          console.warn("octoprint_factor_mqtt settings not ready");
           return;
         }
-        self.pluginSettings = s.plugins.factor_mqtt;
+        self.pluginSettings = s.plugins.octoprint_factor_mqtt;
   
         // KO observable 읽기 (JS에서는 () 호출)
         self.brokerHost(        self.pluginSettings.broker_host()        );
