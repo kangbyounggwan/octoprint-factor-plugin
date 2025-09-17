@@ -8,8 +8,6 @@ import octoprint.plugin
 __plugin_name__ = "MQTT-Plugin from FACTOR"
 __plugin_pythoncompat__ = ">=3.8,<4"
 __plugin_version__ = "1.0.4"
-
-# 🔹 이 줄을 추가하세요 (JS와 동일해야 함)
 __plugin_identifier__ = "factor_mqtt"
 
 class MqttPlugin(octoprint.plugin.SettingsPlugin,
@@ -59,7 +57,37 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         )
     
     ##~~ TemplatePlugin mixin
-    
+    def on_startup(self, host, port):
+        self._connect_mqtt()
+        try:
+            self._log_api_endpoints(host, port)
+        except Exception as e:
+            self._logger.warning("엔드포인트 로그 중 오류: %s", e)
+
+    def on_after_startup(self):
+        # 필요시 추가 로그
+        pass
+
+    # --- 여기부터 유틸 메서드 추가 ---
+    def _log_api_endpoints(self, host: str, port: int):
+        """
+        플러그인 로드 시 접근 가능한 API 엔드포인트를 콘솔(octoprint.log)에 출력
+        """
+        # reverse proxy 등으로 baseUrl 이 설정된 경우 고려
+        base_url = self._settings.global_get(["server", "baseUrl"]) or ""
+        base_url = base_url.rstrip("/")
+
+        # 실제로 바인딩된 내부 주소 기준 (OctoPrint 서비스 관점)
+        internal_base = f"http://{host}:{port}{base_url}"
+        pid = __plugin_identifier__
+
+        status_url = f"{internal_base}/api/plugin/{pid}/status"
+        test_url   = f"{internal_base}/api/plugin/{pid}/test"
+
+        self._logger.info("[FACTOR MQTT] REST endpoints ready:")
+        self._logger.info(" - GET  %s", status_url)
+        self._logger.info(" - POST %s", test_url)
+        self._logger.info("   (헤더 'X-Api-Key' 필요)")
 
     def get_template_configs(self):
         return [dict(
@@ -84,7 +112,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         if not self.is_connected:
             return
         
-        topic_prefix = self._settings.get(["broker_topic_prefix"])
+        topic_prefix = self._settings.get(["topic_prefix"])
         
         if event == "PrinterStateChanged":
             self._publish_status(payload, topic_prefix)
@@ -314,6 +342,8 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
                 "pip": "https://github.com/kangbyounggwan/octoprint-factor-plugin/archive/{target_version}.zip",
             }
         }
+
+
 def __plugin_load__():
     global __plugin_implementation__
     __plugin_implementation__ = MqttPlugin()
