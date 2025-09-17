@@ -110,6 +110,20 @@
 }
 
 
-#settings_plugin_factor_mqtt h4 { margin-top: 0; }
-#settings_plugin_factor_mqtt .m-t-sm { margin-top: 10px; }
-#settings_plugin_factor_mqtt { padding: 0 15px; } /* 좌우 패딩으로 잘림 방지 */
+/* 이 플러그인 영역에서만 적용 */
+#settings_plugin_factor_mqtt.factor-mqtt .form-group { margin-bottom: 12px; }
+#settings_plugin_factor_mqtt.factor-mqtt .help-block { margin: 6px 0 0; }
+
+/* 어떤 커스텀 CSS가 form-control을 inline-block으로 바꿔놨을 때를 대비 */
+#settings_plugin_factor_mqtt.factor-mqtt input.form-control,
+#settings_plugin_factor_mqtt.factor-mqtt select.form-control,
+#settings_plugin_factor_mqtt.factor-mqtt textarea.form-control {
+  display: block;
+  width: 100%;
+}
+
+/* 좁은 모달에서 좌우 여백 충돌 방지 */
+#settings_plugin_factor_mqtt.factor-mqtt .row {
+  margin-left: 0;
+  margin-right: 0;
+}
