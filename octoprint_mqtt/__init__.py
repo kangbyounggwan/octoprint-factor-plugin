@@ -96,10 +96,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             template="mqtt_settings.jinja2",
             custom_bindings=True   # ← 여기 꼭 True
         )]
-    ##~~ StartupPlugin mixin
     
-    def on_startup(self, host, port):
-        self._connect_mqtt()
     
     ##~~ ShutdownPlugin mixin
     
