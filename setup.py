@@ -26,5 +26,5 @@ setup(
             "mqtt = octoprint_mqtt"
         ]
     },
-    python_requires=">=3.7"
+    python_requires=">=3.7,<4"
 )
