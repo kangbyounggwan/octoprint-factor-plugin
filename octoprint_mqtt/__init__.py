@@ -290,7 +290,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
                 result["error"] = f"연결 실패 (코드: {rc})"
             c.disconnect()
 
-        def on_disconnect(c, u, rc, properties=None):
+        def on_disconnect(c, u, rc, properties=None, reason_code=None):
             self._logger.info("[TEST] MQTT DISCONNECT rc=%s", rc)
 
         client.on_connect = on_connect
