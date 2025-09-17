@@ -23,17 +23,13 @@ $(function () {
   
       self.connectionStatus = ko.observable("연결 확인 중...");
       self.isConnected = ko.observable(false);
-  
-      self.pluginSettings = null; // 생성자에선 접근하지 않음
-  
-      // Settings 탭 바인딩 직전 (이 시점에 settings가 준비됨)
       self.onBeforeBinding = function () {
         var s = self.settingsViewModel && self.settingsViewModel.settings;
-        if (!s || !s.plugins || !s.plugins.octoprint_factor_mqtt) {
-          console.warn("octoprint_factor_mqtt settings not ready");
+        if (!s || !s.plugins || !s.plugins.factor_mqtt) {   // ✅ 여기
+          console.warn("factor_mqtt settings not ready");
           return;
         }
-        self.pluginSettings = s.plugins.octoprint_factor_mqtt;
+        self.pluginSettings = s.plugins.factor_mqtt;        // ✅ 여기
   
         // KO observable 읽기 (JS에서는 () 호출)
         self.brokerHost(self.pluginSettings.broker_host());
