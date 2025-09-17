@@ -207,9 +207,28 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         # 멈추고 싶다면 아래 주석 해제:
         # self._stop_snapshot_timer()
     
-    def _on_mqtt_publish(self, client, userdata, mid, properties=None):
-        self._logger.debug(f"MQTT 메시지 발행 완료. 메시지 ID: {mid}")
-    
+    def _on_mqtt_publish(self, client, userdata, mid, *args, **kwargs):
+        # paho 2.0: (mid, properties)
+        # paho 2.1+: (mid, reasonCode, properties)
+        reasonCode = None
+        properties = None
+        if len(args) == 1:
+            properties = args[0]
+        elif len(args) >= 2:
+            reasonCode, properties = args[0], args[1]
+
+        if reasonCode is not None:
+            try:
+                rc_i = _as_code(reasonCode)  # 이미 위에 정의됨
+            except Exception:
+                rc_i = None
+            if rc_i is not None:
+                self._logger.debug(f"MQTT publish mid={mid} rc={rc_i}")
+            else:
+                self._logger.debug(f"MQTT publish mid={mid} rc={reasonCode}")
+        else:
+            self._logger.debug(f"MQTT publish mid={mid}")
+        
     def _on_mqtt_log(self, client, userdata, level, buf):
         """MQTT 로그 콜백 - 연결 상태 디버깅용"""
         if level == 1:  # DEBUG level
