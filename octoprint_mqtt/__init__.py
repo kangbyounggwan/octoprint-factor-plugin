@@ -8,6 +8,9 @@ __plugin_name__ = "MQTT-Plugin from FACTOR"
 __plugin_pythoncompat__ = ">=3.8,<4"
 __plugin_version__ = "1.0.3"
 
+# 🔹 이 줄을 추가하세요 (JS와 동일해야 함)
+__plugin_identifier__ = "factor_mqtt"
+
 class MqttPlugin(octoprint.plugin.SettingsPlugin,
                  octoprint.plugin.AssetPlugin,
                  octoprint.plugin.TemplatePlugin,
