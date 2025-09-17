@@ -7,7 +7,7 @@ import octoprint.plugin
 
 __plugin_name__ = "MQTT-Plugin from FACTOR"
 __plugin_pythoncompat__ = ">=3.8,<4"
-__plugin_version__ = "1.0.4"
+__plugin_version__ = "1.0.6"
 __plugin_identifier__ = "factor_mqtt"
 
 class MqttPlugin(octoprint.plugin.SettingsPlugin,
@@ -22,6 +22,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         super().__init__()
         self.mqtt_client = None
         self.is_connected = False
+        self.snapshot_timer = None
     
     ##~~ SettingsPlugin mixin
     
@@ -38,6 +39,9 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             publish_progress=True,
             publish_temperature=True,
             publish_gcode=False,
+            publish_snapshot=True,
+            snapshot_interval=1.0
+            
         )
     
     def get_settings_version(self):
@@ -47,6 +51,9 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         octoprint.plugin.SettingsPlugin.on_settings_save(self, data)
         self._disconnect_mqtt()
         self._connect_mqtt()
+        # 설정 변경 시 스냅샷 타이머 재시작
+        if self.is_connected:
+            self._start_snapshot_timer()
     
     ##~~ AssetPlugin mixin
     
@@ -162,6 +169,8 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         if rc == 0:
             self.is_connected = True
             self._logger.info("MQTT 브로커에 성공적으로 연결되었습니다.")
+            # 연결 성공 시 스냅샷 타이머 시작
+            self._start_snapshot_timer()
         else:
             self.is_connected = False
             self._logger.error(f"MQTT 연결 실패. 코드: {rc}")
@@ -169,6 +178,8 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
     def _on_mqtt_disconnect(self, client, userdata, rc, properties=None):
         self.is_connected = False
         self._logger.info("MQTT 브로커와의 연결이 끊어졌습니다.")
+        # 연결 해제 시 스냅샷 타이머 중지
+        self._stop_snapshot_timer()
     
     def _on_mqtt_publish(self, client, userdata, mid, properties=None):
         self._logger.debug(f"MQTT 메시지 발행 완료. 메시지 ID: {mid}")
@@ -319,6 +330,15 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
 
         if result["success"]:
             self._logger.info("[TEST] MQTT 연결 테스트 성공 rtt=%sms", result["rtt_ms"])
+            
+            # 테스트 성공 후 프린터가 연결되어 있으면 스냅샷 전송
+            if self._printer.is_operational():
+                try:
+                    self._periodic_tick()
+                    self._logger.info("[TEST] 스냅샷 전송 완료")
+                except Exception as e:
+                    self._logger.warning("[TEST] 스냅샷 전송 실패: %s", e)
+            
             return {"success": True, "message": "연결 테스트 성공", "rtt_ms": result["rtt_ms"]}
         else:
             err = result["error"] or "연결 시간 초과"
@@ -339,6 +359,113 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
                 "pip": "https://github.com/kangbyounggwan/octoprint-factor-plugin/archive/{target_version}.zip",
             }
         }
+    
+    def _make_snapshot(self):
+        """프린터 상태 스냅샷을 생성합니다."""
+        import time, json
+        
+        data  = self._printer.get_current_data() or {}
+        temps = self._printer.get_current_temperatures() or {}
+        conn  = self._printer.get_current_connection() or {}
+
+        progress = (data.get("progress") or {})
+        job      = (data.get("job") or {})
+        fileinfo = (job.get("file") or {})
+        filament = (job.get("filament") or {})
+        flags    = (data.get("state") or {}).get("flags", {})
+
+        size    = fileinfo.get("size") or 0
+        filepos = progress.get("filepos") or 0
+        file_pct = round((filepos/size*100.0), 2) if size else None
+
+        snapshot = {
+            "ts":        time.time(),
+            "state": {
+                "text": (data.get("state") or {}).get("text"),
+                "flags": {
+                    "operational": bool(flags.get("operational")),
+                    "printing":    bool(flags.get("printing")),
+                    "paused":      bool(flags.get("paused")),
+                    "error":       bool(flags.get("error")),
+                    "ready":       bool(flags.get("ready")),
+                }
+            },
+            "progress": {
+                "completion": progress.get("completion"),      # %
+                "filepos":    filepos,                         # bytes
+                "file_size":  size,                            # bytes
+                "file_pct":   file_pct,                        # %
+                "print_time": progress.get("printTime"),       # sec
+                "time_left":  progress.get("printTimeLeft"),   # sec
+                "time_left_origin": progress.get("printTimeLeftOrigin"),
+            },
+            "job": {
+                "file": {
+                    "name":   fileinfo.get("name"),
+                    "origin": fileinfo.get("origin"),   # local/sdcard
+                    "date":   fileinfo.get("date"),
+                },
+                "estimated_time": job.get("estimatedPrintTime"),
+                "last_time":      job.get("lastPrintTime"),
+                "filament":       filament,            # tool0.length/volume 등 그대로 유지
+            },
+            "axes": {
+                "currentZ": data.get("currentZ")
+            },
+            "temperatures": temps,                      # tool0/bed/chamber: actual/target/offset
+            "connection": conn,                         # port/baudrate/printerProfile/state
+            "sd": (data.get("sd") or {}),
+        }
+        return snapshot
+
+    @octoprint.plugin.BlueprintPlugin.route("/snapshot", methods=["GET"])
+    def get_snapshot(self):
+        """REST API로 스냅샷을 반환합니다."""
+        return self._make_snapshot()
+
+    def _start_snapshot_timer(self):
+        """스냅샷 전송 타이머를 시작합니다."""
+        if self.snapshot_timer:
+            self._stop_snapshot_timer()
+        
+        if not self._settings.get(["publish_snapshot"]):
+            return
+            
+        interval = self._settings.get(["snapshot_interval"]) or 1.0
+        self.snapshot_timer = self._plugin_manager.get_plugin("timelapse")._timer if hasattr(self._plugin_manager.get_plugin("timelapse"), "_timer") else None
+        
+        # OctoPrint의 타이머 시스템 사용
+        import threading
+        def timer_callback():
+            if self.is_connected and self.mqtt_client and self._settings.get(["publish_snapshot"]):
+                self._periodic_tick()
+            if self.snapshot_timer:
+                self.snapshot_timer = threading.Timer(interval, timer_callback)
+                self.snapshot_timer.start()
+        
+        self.snapshot_timer = threading.Timer(interval, timer_callback)
+        self.snapshot_timer.start()
+        self._logger.info("스냅샷 타이머 시작: %.1f초 간격", interval)
+    
+    def _stop_snapshot_timer(self):
+        """스냅샷 전송 타이머를 중지합니다."""
+        if self.snapshot_timer:
+            self.snapshot_timer.cancel()
+            self.snapshot_timer = None
+            self._logger.info("스냅샷 타이머 중지")
+
+    def _periodic_tick(self):
+        """주기적으로 스냅샷을 MQTT로 전송합니다."""
+        if not (self.is_connected and self.mqtt_client):
+            return
+        
+        try:
+            topic = f"{self._settings.get(['topic_prefix']) or 'octoprint'}/snapshot"
+            snapshot = self._make_snapshot()
+            self._publish_message(topic, json.dumps(snapshot))
+            self._logger.debug("스냅샷 전송 완료: %s", topic)
+        except Exception as e:
+            self._logger.error("스냅샷 전송 중 오류: %s", e)
 
 
 def __plugin_load__():

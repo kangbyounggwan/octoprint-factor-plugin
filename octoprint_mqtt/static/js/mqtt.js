@@ -16,8 +16,10 @@ $(function () {
       self.retainMessages = ko.observable(false);
       self.publishStatus = ko.observable(false);
       self.publishProgress = ko.observable(false);
-      self.publishTemperature = ko.observable(false);
-      self.publishGcode = ko.observable(false);
+       self.publishTemperature = ko.observable(false);
+       self.publishGcode = ko.observable(false);
+       self.publishSnapshot = ko.observable(false);
+       self.snapshotInterval = ko.observable(1.0);
   
       self.connectionStatus = ko.observable("연결 확인 중...");
       self.isConnected = ko.observable(false);
@@ -43,8 +45,10 @@ $(function () {
         self.retainMessages(!!self.pluginSettings.retain_messages());
         self.publishStatus(!!self.pluginSettings.publish_status());
         self.publishProgress(!!self.pluginSettings.publish_progress());
-        self.publishTemperature(!!self.pluginSettings.publish_temperature());
-        self.publishGcode(!!self.pluginSettings.publish_gcode());
+         self.publishTemperature(!!self.pluginSettings.publish_temperature());
+         self.publishGcode(!!self.pluginSettings.publish_gcode());
+         self.publishSnapshot(!!self.pluginSettings.publish_snapshot());
+         self.snapshotInterval(parseFloat(self.pluginSettings.snapshot_interval()) || 1.0);
   
         self.checkConnectionStatus();
       };
@@ -62,8 +66,10 @@ $(function () {
         self.pluginSettings.retain_messages(!!self.retainMessages());
         self.pluginSettings.publish_status(!!self.publishStatus());
         self.pluginSettings.publish_progress(!!self.publishProgress());
-        self.pluginSettings.publish_temperature(!!self.publishTemperature());
-        self.pluginSettings.publish_gcode(!!self.publishGcode());
+         self.pluginSettings.publish_temperature(!!self.publishTemperature());
+         self.pluginSettings.publish_gcode(!!self.publishGcode());
+         self.pluginSettings.publish_snapshot(!!self.publishSnapshot());
+         self.pluginSettings.snapshot_interval(parseFloat(self.snapshotInterval()) || 1.0);
   
         // 저장 후 플러그인에서 _connect_mqtt 재시도하므로 조금 기다렸다 상태 재확인
         setTimeout(self.checkConnectionStatus, 1000);
