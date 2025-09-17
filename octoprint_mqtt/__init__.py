@@ -283,6 +283,12 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             "broker_port": self._settings.get(["broker_port"])
         }
         
+    def _as_code(x):
+        try:
+            return int(x)
+        except Exception:
+            return str(x) if x is not None else None
+
     @octoprint.plugin.BlueprintPlugin.route("/test", methods=["POST"])
     def test_mqtt_connection(self):
         import time, json, threading
@@ -310,28 +316,43 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         result = {"success": False, "error": None, "rc": None, "rtt_ms": None}
         connected_evt = threading.Event()
         published_evt = threading.Event()
-        mid_holder = {"mid": None}
+        mid_ref = {"mid": None}
 
-        def on_connect(c, u, flags, rc, properties=None):
-            result["rc"] = rc
-            if rc == 0:
-                self._logger.info("[TEST] MQTT CONNECT OK (rc=0)")
+        # v2: (client, userdata, flags, reasonCode, properties)
+        def on_connect(c, u, flags, reasonCode, properties=None):
+            result["rc"] = _as_code(reasonCode)
+            if result["rc"] == 0:
+                self._logger.info("[TEST] MQTT CONNECT OK (rc=%s)", result["rc"])
                 if do_publish:
                     payload = json.dumps({"plugin": "factor_mqtt", "status": "ok", "ts": time.time()})
-                    info = c.publish(topic, payload, qos=1, retain=False)  # ✅ QoS 1 → PUBACK 확인
-                    mid_holder["mid"] = info.mid
+                    info = c.publish(topic, payload, qos=1, retain=False)  # PUBACK 확인용 QoS 1
+                    mid_ref["mid"] = info.mid
+                    # 콜백 안에서는 wait 금지!
             else:
-                self._logger.error("[TEST] MQTT CONNECT FAIL rc=%s", rc)
-                result["error"] = f"연결 실패 (코드: {rc})"
-            connected_evt.set()  # ✅ 콜백에서는 신호만
+                self._logger.error("[TEST] MQTT CONNECT FAIL rc=%s", result["rc"])
+                result["error"] = f"연결 실패 (코드: {result['rc']})"
+            connected_evt.set()
 
-        def on_publish(c, u, mid, properties=None):
-            if mid_holder["mid"] == mid:
-                self._logger.info("[TEST] MQTT PUBLISH OK topic=%s", topic)
+        # paho 2.0: (client, userdata, mid, properties)
+        # paho 2.1: (client, userdata, mid, reasonCode, properties)
+        def on_publish(c, u, mid, *args, **kwargs):
+            reasonCode = None
+            properties = None
+            if len(args) == 1:
+                properties = args[0]
+            elif len(args) >= 2:
+                reasonCode, properties = args[0], args[1]
+            if mid_ref["mid"] == mid:
+                if reasonCode is not None:
+                    self._logger.info("[TEST] MQTT PUBLISH OK topic=%s rc=%s", topic, _as_code(reasonCode))
+                else:
+                    self._logger.info("[TEST] MQTT PUBLISH OK topic=%s", topic)
                 published_evt.set()
 
-        def on_disconnect(c, u, rc, properties=None):
-            self._logger.info("[TEST] MQTT DISCONNECT rc=%s", rc)
+        # v2: (client, userdata, disconnect_flags, reasonCode, properties)
+        def on_disconnect(c, u, disconnect_flags, reasonCode, properties=None):
+            self._logger.info("[TEST] MQTT DISCONNECT flags=%s rc=%s",
+                            str(disconnect_flags), _as_code(reasonCode))
 
         client.on_connect = on_connect
         client.on_publish = on_publish
@@ -343,17 +364,15 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             client.connect(host, port, 10)
             client.loop_start()
 
-            # ✅ 메인 쓰레드에서 '연결' 완료 대기
+            # 메인 쓰레드 대기(콜백 안에서는 절대 wait 하지 말기!)
             if not connected_evt.wait(6):
                 result["error"] = "연결 시간 초과"
             elif result["rc"] == 0 and do_publish:
-                # ✅ 메인 쓰레드에서 '발행 완료(PUBACK)' 대기
                 if not published_evt.wait(3):
                     self._logger.warning("[TEST] MQTT PUBLISH TIMEOUT topic=%s", topic)
                 else:
                     result["success"] = True
             else:
-                # 연결만 확인하고 발행은 안 한 경우
                 result["success"] = (result["rc"] == 0)
 
         except Exception as e:
@@ -369,7 +388,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         result["rtt_ms"] = int((time.time() - t0) * 1000)
         if result["success"]:
             self._logger.info("[TEST] MQTT 연결 테스트 성공 rtt=%sms", result["rtt_ms"])
-            # (선택) 메인 클라이언트가 붙어 있다면 스냅샷 한 번 퍼블리시
+            # (선택) 메인 클라이언트가 붙어있다면 스냅샷 1회 발행
             try:
                 if self.is_connected and self.mqtt_client:
                     self._publish_message(f"{self._settings.get(['topic_prefix']) or 'octoprint'}/status",
@@ -377,11 +396,12 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
                     self._logger.info("[TEST] 스냅샷 전송 완료")
             except Exception as e:
                 self._logger.warning("[TEST] 스냅샷 전송 실패: %s", e)
-            return {"success": True, "message": "연결 테스트 성공", "rtt_ms": result["rtt_ms"]}
+            return {"success": True, "message": "연결 테스트 성공", "rtt_ms": result["rtt_ms"], "rc": result["rc"]}
         else:
             err = result["error"] or "연결 시간 초과"
             self._logger.error("[TEST] MQTT 연결 테스트 실패: %s", err)
-            return {"success": False, "error": err, "rc": result["rc"], "rtt_ms": result["rtt_ms"]}
+            return {"success": False, "error": err, "rtt_ms": result["rtt_ms"], "rc": result["rc"]}
+
 
 
     
