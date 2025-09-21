@@ -561,7 +561,23 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         except Exception as e:
             self._logger.error(f"메시지 발행 중 오류 발생: {e}")
     
-
+    def normalize_gcode_data(raw):
+        # 가장 안쪽 파일 정보 추출
+        file_data = next(iter(next(iter(raw["local"].values())).values()))
+        
+        return {
+            "source": "local",
+            "name": file_data.get("name"),
+            "display": file_data.get("display"),
+            "path": file_data.get("path"),
+            "type": file_data.get("type"),
+            "typePath": file_data.get("typePath"),
+            "hash": file_data.get("hash"),
+            "size": file_data.get("size"),
+            "user": file_data.get("user"),
+            "date": file_data.get("date"),
+            "analysis": file_data.get("analysis"),
+        }
 
     def _get_sd_tree(self, force_refresh=False, timeout=0.0):
         """
@@ -571,13 +587,13 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             # 방법 1: 리스트 형식으로 통일
             # 전체 파일 목록 (API 응답과 동일한 형식)
             local_files = self._file_manager.list_files(FileDestinations.LOCAL)
-            
+            local_files_tree = normalize_gcode_data(local_files)
             
             # SD카드 파일 목록 (리스트 형태)
             sd_files = self._printer.get_sd_files()
 
             all_files_payload = {}
-            all_files_payload["local"] = local_files
+            all_files_payload["local"] = local_files_tree
             all_files_payload["sdcard"] = sd_files
 
             
