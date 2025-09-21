@@ -485,12 +485,10 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             # SD카드 파일 목록 (리스트 형태)
             sd_files = self._printer.get_sd_files()
 
-            self._logger.info(f"[FACTOR MQTT] FileManager counts: LOCAL={len(local_files)} SDCARD={len(sd_files)}")
-
             all_files_payload = {}
             all_files_payload["local"] = local_files
             all_files_payload["sdcard"] = sd_files
-            
+
             return all_files_payload
 
         except Exception as e:
