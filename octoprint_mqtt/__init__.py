@@ -3,6 +3,10 @@ import json
 from flask import request  # Blueprint에서 사용
 import octoprint.plugin
 from octoprint.util import RepeatedTimer
+import base64
+import io
+import time
+import hashlib
 
 
 
@@ -42,6 +46,9 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         self.mqtt_client = None
         self.is_connected = False
         self._snapshot_timer = None
+        self._gcode_jobs = {}
+        self._firmware_info = None
+        self._firmware_info_ts = None
     
     ##~~ SettingsPlugin mixin
     
@@ -59,7 +66,11 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             publish_temperature=True,
             publish_gcode=False,
             publish_snapshot=True,
-            periodic_interval=1.0
+            periodic_interval=1.0,
+            receive_gcode_enabled=True,
+            receive_topic_suffix="gcode_in",
+            receive_target_default="local_print",
+            receive_timeout_sec=300
             
         )
     
@@ -146,6 +157,14 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             self._publish_temperature(payload, topic_prefix)
         elif event == "GcodeReceived":
             self._publish_gcode(payload, topic_prefix)
+            try:
+                line = (payload or {}).get("line") or ""
+                if isinstance(line, str) and "FIRMWARE_NAME:" in line:
+                    self._firmware_info = line.strip()
+                    self._firmware_info_ts = time.time()
+                    self._logger.info(f"[FACTOR MQTT] 펌웨어 정보 갱신: {self._firmware_info}")
+            except Exception as e:
+                self._logger.debug(f"펌웨어 파싱 실패: {e}")
     
     ##~~ Private methods
     
@@ -166,6 +185,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             self.mqtt_client.on_disconnect = self._on_mqtt_disconnect
             self.mqtt_client.on_publish = self._on_mqtt_publish
             self.mqtt_client.on_log = self._on_mqtt_log
+            self.mqtt_client.on_message = self._on_mqtt_message
             
             # 재연결 설정
             self.mqtt_client.reconnect_delay_set(min_delay=1, max_delay=120)
@@ -196,6 +216,15 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         if self.is_connected:
             self._logger.info("MQTT 브로커 연결 OK")
             self._start_snapshot_timer()     # ✅ 여기서 시작
+            try:
+                topic_prefix = self._settings.get(["topic_prefix"]) or "octoprint"
+                suffix = self._settings.get(["receive_topic_suffix"]) or "gcode_in"
+                qos = int(self._settings.get(["qos_level"]) or 0)
+                topic = f"{topic_prefix}/{suffix}/#"
+                self.mqtt_client.subscribe(topic, qos=qos)
+                self._logger.info(f"[FACTOR MQTT] subscribe: {topic} (qos={qos})")
+            except Exception as e:
+                self._logger.warning(f"[FACTOR MQTT] subscribe 실패: {e}")
         else:
             self._logger.error(f"MQTT 연결 실패 rc={rc}")
 
@@ -239,6 +268,139 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             self._logger.warning(f"MQTT: {buf}")
         elif level == 8:  # ERROR level
             self._logger.error(f"MQTT: {buf}")
+    
+    def _on_mqtt_message(self, client, userdata, msg):
+        try:
+            if not bool(self._settings.get(["receive_gcode_enabled"])):
+                return
+            topic = msg.topic or ""
+            topic_prefix = self._settings.get(["topic_prefix"]) or "octoprint"
+            suffix = self._settings.get(["receive_topic_suffix"]) or "gcode_in"
+            if not topic.startswith(f"{topic_prefix}/{suffix}"):
+                return
+            payload = msg.payload.decode("utf-8", errors="ignore") if isinstance(msg.payload, (bytes, bytearray)) else str(msg.payload or "")
+            data = json.loads(payload or "{}")
+            self._handle_gcode_message(data)
+        except Exception as e:
+            self._logger.exception(f"[FACTOR MQTT] on_message 처리 오류: {e}")
+
+    def _handle_gcode_message(self, data: dict):
+        action = (data.get("action") or "").lower()
+        job_id = data.get("job_id")
+        now = time.time()
+        if not job_id:
+            self._logger.warning("[FACTOR MQTT] job_id 누락")
+            return
+
+        self._gc_expired_jobs(now)
+
+        if action == "start":
+            filename = data.get("filename") or f"{job_id}.gcode"
+            total = int(data.get("total_chunks") or 0)
+            if total <= 0:
+                self._logger.warning("[FACTOR MQTT] total_chunks 누락/잘못됨")
+                return
+            self._gcode_jobs[job_id] = {
+                "filename": filename,
+                "total": total,
+                "chunks": {},
+                "created_ts": now,
+                "last_ts": now
+            }
+            self._logger.info(f"[FACTOR MQTT] GCODE 수신 시작 job={job_id} file={filename} total={total}")
+            return
+
+        state = self._gcode_jobs.get(job_id)
+        if not state:
+            self._logger.warning(f"[FACTOR MQTT] 알 수 없는 job_id={job_id}, start 먼저 필요")
+            return
+
+        state["last_ts"] = now
+
+        if action == "chunk":
+            try:
+                seq = int(data.get("seq"))
+                b64 = data.get("data_b64") or ""
+                if seq < 0 or not b64:
+                    raise ValueError("seq/data_b64 invalid")
+                chunk = base64.b64decode(b64)
+                state["chunks"][seq] = chunk
+                if len(state["chunks"]) % 50 == 0 or len(state["chunks"]) == 1:
+                    self._logger.info(f"[FACTOR MQTT] chunk 수신 job={job_id} {len(state['chunks'])}/{state['total']}")
+            except Exception as e:
+                self._logger.warning(f"[FACTOR MQTT] chunk 처리 실패: {e}")
+            return
+
+        if action == "cancel":
+            self._gcode_jobs.pop(job_id, None)
+            self._logger.info(f"[FACTOR MQTT] GCODE 수신 취소 job={job_id}")
+            return
+
+        if action == "end":
+            total = state["total"]
+            got = len(state["chunks"])
+            if got != total:
+                self._logger.warning(f"[FACTOR MQTT] end 수신 but chunk 불일치 {got}/{total}, 조합 중단")
+                return
+
+            ordered = [state["chunks"][i] for i in range(total)]
+            content = b"".join(ordered)
+
+            expect_md5 = (data.get("md5") or "").lower()
+            if expect_md5:
+                calc_md5 = hashlib.md5(content).hexdigest()
+                if calc_md5 != expect_md5:
+                    self._logger.warning(f"[FACTOR MQTT] MD5 불일치 expect={expect_md5} got={calc_md5}")
+
+            filename = state["filename"]
+            target = (data.get("target") or "").lower()
+            if target not in ("sd", "local_print"):
+                target = (self._settings.get(["receive_target_default"]) or "local_print").lower()
+
+            try:
+                if target == "sd":
+                    self._finalize_job_to_sd(filename, content)
+                    self._logger.info(f"[FACTOR MQTT] SD 저장 완료 file={filename}")
+                else:
+                    self._finalize_job_to_local_and_print(filename, content)
+                    self._logger.info(f"[FACTOR MQTT] 로컬 저장+인쇄 시작 file={filename}")
+            except Exception as e:
+                self._logger.exception(f"[FACTOR MQTT] 최종 처리 실패: {e}")
+                return
+            finally:
+                self._gcode_jobs.pop(job_id, None)
+            return
+
+        self._logger.warning(f"[FACTOR MQTT] 지원되지 않는 action={action}")
+
+    def _finalize_job_to_sd(self, filename: str, content: bytes):
+        from octoprint.filemanager.destinations import FileDestinations
+        stream = io.BytesIO(content)
+        stream.seek(0)
+        self._file_manager.add_file(FileDestinations.SDCARD, filename, stream, allow_overwrite=True)
+
+    def _finalize_job_to_local_and_print(self, filename: str, content: bytes):
+        from octoprint.filemanager.destinations import FileDestinations
+        stream = io.BytesIO(content)
+        stream.seek(0)
+        self._file_manager.add_file(FileDestinations.LOCAL, filename, stream, allow_overwrite=True)
+        self._printer.select_file(filename, False, printAfterSelect=True)
+
+    def _gc_expired_jobs(self, now: float = None):
+        try:
+            if now is None:
+                now = time.time()
+            timeout = int(self._settings.get(["receive_timeout_sec"]) or 300)
+            expired = []
+            for job_id, st in self._gcode_jobs.items():
+                if now - (st.get("last_ts") or st.get("created_ts") or now) > timeout:
+                    expired.append(job_id)
+            for job_id in expired:
+                self._gcode_jobs.pop(job_id, None)
+            if expired:
+                self._logger.warning(f"[FACTOR MQTT] 만료된 job 정리: {expired}")
+        except Exception:
+            pass
     
     def _check_mqtt_connection_status(self):
         """MQTT 연결 상태를 확인합니다."""
@@ -319,7 +481,9 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         return {
             "connected": self.is_connected,
             "broker_host": self._settings.get(["broker_host"]),
-            "broker_port": self._settings.get(["broker_port"])
+            "broker_port": self._settings.get(["broker_port"]),
+            "firmware_info": self._firmware_info,
+            "firmware_ts": self._firmware_info_ts,
         }
 
     @octoprint.plugin.BlueprintPlugin.route("/test", methods=["POST"])
@@ -541,6 +705,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             payload = self._make_snapshot()
             topic = f"{self._settings.get(['topic_prefix']) or 'octoprint'}/status"
             self._publish_message(topic, json.dumps(payload))
+            self._gc_expired_jobs()
         except Exception as e:
             self._logger.debug(f"snapshot tick error: {e}")
 

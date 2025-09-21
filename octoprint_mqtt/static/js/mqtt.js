@@ -23,6 +23,7 @@ $(function () {
   
       self.connectionStatus = ko.observable("연결 확인 중...");
       self.isConnected = ko.observable(false);
+      self.firmwareInfo = ko.observable("미수집");
       self.onBeforeBinding = function () {
         var s = self.settingsViewModel && self.settingsViewModel.settings;
         if (!s || !s.plugins || !s.plugins.factor_mqtt) {   // ✅ 여기
@@ -84,6 +85,7 @@ $(function () {
             if (r && r.connected) {
               self.connectionStatus("MQTT 브로커에 연결됨");
               self.isConnected(true);
+              self.firmwareInfo(r && r.firmware_info ? r.firmware_info : (self.firmwareInfo() || "미수집"));
             } else {
               self.connectionStatus("MQTT 브로커에 연결되지 않음");
               self.isConnected(false);
@@ -92,6 +94,17 @@ $(function () {
           .fail(function () {
             self.connectionStatus("연결 상태를 확인할 수 없습니다.");
             self.isConnected(false);
+          });
+      };
+
+      // 펌웨어 정보 새로고침
+      self.refreshFirmware = function () {
+        OctoPrint.ajax("GET", "plugin/factor_mqtt/status")
+          .done(function (r) {
+            self.firmwareInfo(r && r.firmware_info ? r.firmware_info : "미수집");
+          })
+          .fail(function () {
+            self.firmwareInfo("조회 실패");
           });
       };
   
