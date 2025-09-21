@@ -6,6 +6,7 @@ from octoprint.util import RepeatedTimer
 from flask import jsonify, make_response
 import requests
 import re
+import uuid
 import base64
 import io
 import time
@@ -69,6 +70,9 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             publish_snapshot=True,
             periodic_interval=1.0,
             auth_api_base="http://192.168.200.104:5000",
+            register_api_base="http://192.168.200.104:5000",
+            instance_id=str(uuid.uuid4()),
+            registered=False,
             receive_gcode_enabled=True,
             receive_topic_suffix="gcode_in",
             receive_target_default="local_print",
@@ -480,6 +484,17 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             self._logger.debug(f"sd 트리 조회 실패: {e}")
             return {}
 
+    def _ensure_instance_id(self):
+        iid = self._settings.get(["instance_id"]) or ""
+        if not iid:
+            try:
+                iid = str(uuid.uuid4())
+                self._settings.set(["instance_id"], iid)
+                self._settings.save()
+            except Exception:
+                pass
+        return iid
+
     ##~~ BlueprintPlugin mixin
     
     @octoprint.plugin.BlueprintPlugin.route("/auth/login", methods=["POST"])
@@ -506,6 +521,43 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         except Exception as e:
             return make_response(jsonify({"error": str(e)}), 500)
 
+    @octoprint.plugin.BlueprintPlugin.route("/register", methods=["POST"])
+    def proxy_register(self):
+        try:
+            data = request.get_json(force=True) or {}
+            instance_id = (data.get("instance_id") or "").strip() or self._ensure_instance_id()
+            user = data.get("user") or {}
+            if not instance_id:
+                return make_response(jsonify({"success": False, "error": "missing instance_id"}), 400)
+
+            base = (self._settings.get(["register_api_base"]) or self._settings.get(["auth_api_base"]) or "http://127.0.0.1:5000").rstrip("/")
+            if not re.match(r"^https?://", base):
+                return make_response(jsonify({"success": False, "error": "invalid register_api_base"}), 500)
+
+            url = f"{base}/api/printer/register"
+            # 프린터 요약 정보(필요 시 확장)
+            printer_info = {
+                "connection": self._printer.get_current_connection(),
+                "state": (self._printer.get_current_data() or {}).get("state"),
+            }
+            payload = {"instance_id": instance_id, "printer_info": printer_info, "user": user}
+            resp = requests.post(url, json=payload, timeout=8)
+            ok = 200 <= resp.status_code < 300
+            try:
+                out = resp.json()
+            except Exception:
+                out = {"raw": resp.text}
+            if ok:
+                try:
+                    self._settings.set(["registered"], True)
+                    self._settings.set(["instance_id"], instance_id)
+                    self._settings.save()
+                except Exception:
+                    pass
+            return make_response(jsonify(out), resp.status_code)
+        except Exception as e:
+            return make_response(jsonify({"success": False, "error": str(e)}), 500)
+
     @octoprint.plugin.BlueprintPlugin.route("/status", methods=["GET"])
     def get_mqtt_status(self):
         """MQTT 연결 상태를 반환합니다."""
@@ -514,7 +566,9 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             "broker_host": self._settings.get(["broker_host"]),
             "broker_port": self._settings.get(["broker_port"]),
             # /api/files?recursive=true 의 sdcard 트리와 동일 구조
-            "sd_files": self._get_sd_tree()
+            "sd_files": self._get_sd_tree(),
+            "registered": bool(self._settings.get(["registered"]) or False),
+            "instance_id": self._settings.get(["instance_id"]) or None,
         }
 
     @octoprint.plugin.BlueprintPlugin.route("/test", methods=["POST"])
@@ -702,6 +756,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             "temperatures": temps,                      # tool0/bed/chamber: actual/target/offset
             "connection": conn,                         # port/baudrate/printerProfile/state
             "sd": (data.get("sd") or {}),
+            "sd_files": self._get_sd_tree(),
         }
         return snapshot
 
