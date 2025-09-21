@@ -2,6 +2,7 @@
 import json
 from flask import request  # Blueprint에서 사용
 import octoprint.plugin
+from octoprint.filemanager.destinations import FileDestinations
 from octoprint.util import RepeatedTimer
 from flask import jsonify, make_response
 import requests
@@ -472,59 +473,77 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         except Exception as e:
             self._logger.error(f"메시지 발행 중 오류 발생: {e}")
     
-    def _get_sd_tree(self):
-        """/api/files?recursive=true 의 sdcard 트리와 동일한 캐시 데이터를 반환"""
+    def _get_sd_tree(self, force_refresh=False, timeout=0.0):
+        """
+        /api/files?recursive=true 의 sdcard 트리와 최대한 동일하게 반환
+        """
         try:
-            # 1차: origin=sdcard 트리 그대로 시도
+            # 0) 목적지 상수 확보 (없으면 문자열 fallback)
             try:
-                raw = self._file_manager.list_files("sdcard", recursive=True) or {}
+                SDCARD = getattr(FileDestinations, "SDCARD", "sdcard")
+            except Exception:
+                SDCARD = "sdcard"
+
+            raw = None
+
+            # 1) 목적지 지정하여 직접 조회 (올바른 방식)
+            try:
+                raw = self._file_manager.list_files(destination=SDCARD, recursive=True) or {}
             except TypeError:
+                # 구버전 시그니처 호환
                 raw = None
 
-            # 2차: 구버전/빈값일 때 전체 트리에서 sdcard만 추출
+            # 2) 비었으면 전체 트리에서 sdcard만 추출 (키 타입 모두 대응)
             if not raw:
                 all_tree = self._file_manager.list_files(recursive=True) or {}
-                raw = all_tree.get("sdcard") or {}
+                # 우선 상수 키로 시도
+                raw = all_tree.get(SDCARD)
+                if raw is None:
+                    # 문자열 키도 스캔
+                    for k, v in all_tree.items():
+                        key = str(k).lower()
+                        if key.endswith("sdcard") or key == "sdcard":
+                            raw = v
+                            break
 
-            # 3차: 여전히 비어 있으면 플랫 리스트 생성해서 API 형태로 반환
-            if not raw or (isinstance(raw, dict) and not raw):
-                files = []
-                try:
-                    all_tree = self._file_manager.list_files(recursive=True) or {}
-                    sd_root = all_tree.get("sdcard") or {}
-                    def collect(node):
-                        if isinstance(node, list):
-                            for it in node:
-                                collect(it)
-                            return
-                        if isinstance(node, dict):
-                            if "children" in node:
-                                collect(node.get("children"))
-                                return
-                            # 파일 후보 단순화
-                            name = node.get("name") or node.get("path")
-                            path = node.get("path") or name
-                            if name:
-                                files.append({
-                                    "name": name,
-                                    "path": path,
-                                    "origin": "sdcard",
-                                    "size": node.get("size"),
-                                    "type": node.get("type") or "file",
-                                })
-                            # 중첩 내부 탐색
-                            for v in node.values():
-                                if isinstance(v, (dict, list)):
-                                    collect(v)
-                    collect(sd_root)
-                except Exception:
-                    files = []
-                return {"files": files}
+            # 3) 여전히 비면 빈 결과
+            if not raw:
+                return {"files": []}
 
-            return raw
+            # 4) 이미 REST 스타일이면 그대로, 아니면 REST 스타일로 변환
+            if isinstance(raw, dict) and "files" in raw:
+                return raw
+
+            def as_api_files(node):
+                out = []
+                def walk(n):
+                    if isinstance(n, list):
+                        for it in n: walk(it); return
+                    if isinstance(n, dict):
+                        name = n.get("name") or n.get("path")
+                        path = n.get("path") or name
+                        typ  = n.get("type") or ("folder" if "children" in n else "file")
+                        if name and path:
+                            out.append({
+                                "name": name,
+                                "path": path,
+                                "origin": "sdcard",
+                                "type": typ,
+                                "size": n.get("size"),
+                            })
+                        if "children" in n: walk(n["children"])
+                        else:
+                            for v in n.values():
+                                if isinstance(v, (dict, list)): walk(v)
+                walk(node)
+                return {"files": out}
+
+            return as_api_files(raw)
+
         except Exception as e:
-            self._logger.debug(f"sd 트리 조회 실패: {e}")
-            return {}
+            self._logger.debug("sd 트리 조회 실패: %s", e)
+            return {"files": []}
+
 
     def _get_printer_summary(self):
         try:
@@ -881,7 +900,6 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             },
             "temperatures": temps,                      # tool0/bed/chamber: actual/target/offset
             "connection": conn,                         # port/baudrate/printerProfile/state
-            "sd": (data.get("sd") or {}),
             "sd_files": self._get_sd_tree(),
         }
         return snapshot
