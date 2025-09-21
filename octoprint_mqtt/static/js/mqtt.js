@@ -58,7 +58,7 @@ $(function () {
           })
             .then(function (r) { return r.json(); })
             .then(function (data) {
-              var ok = !!(data && !data.error && (data.user || data.session));
+              var ok = !!(data && (data.success === true || (!data.error && (data.user || data.session))));
               if (ok) {
                 sessionStorage.setItem("factor_mqtt.auth", JSON.stringify(data));
                 self.authResp(data);
