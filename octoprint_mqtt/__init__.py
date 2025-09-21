@@ -561,23 +561,92 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         except Exception as e:
             self._logger.error(f"메시지 발행 중 오류 발생: {e}")
     
+    def _convert_local_to_api_format(self, files_dict):
+        """로컬 파일을 API 형식으로 변환"""
+        api_files = []
+        
+        # 딕셔너리 값을 리스트로 변환
+        for file_data in files_dict.values():
+            if file_data["type"] == "folder":
+                # 폴더인 경우 하위 파일들 처리
+                if "children" in file_data:
+                    children_api = self._convert_local_to_api_format(file_data["children"])
+                    api_files.extend(children_api)
+            else:
+                # 파일인 경우 API 형식으로 변환
+                api_file = {
+                    "name": file_data["name"],
+                    "display": file_data.get("display", file_data["name"]),
+                    "path": file_data["path"],
+                    "type": file_data["type"],
+                    "typePath": file_data.get("typePath", []),
+                    "origin": "local",
+                    "size": file_data.get("size"),
+                    "date": file_data.get("date"),
+                    "hash": file_data.get("hash")
+                }
+                
+                # None 값 제거
+                api_file = {k: v for k, v in api_file.items() if v is not None}
+                api_files.append(api_file)
+        
+        return api_files
+
+    def _convert_sd_to_api_format(self, sd_files):
+        """SD카드 파일을 API 형식으로 변환"""
+        api_files = []
+        
+        for f in sd_files:
+            # 파일 타입 확인
+            type_path = octoprint.filemanager.get_file_type(f["name"])
+            if not type_path:
+                continue
+            
+            api_file = {
+                "name": f["name"],
+                "display": f["display"] if f["display"] else f["name"],
+                "path": f["name"],
+                "type": type_path[0],
+                "typePath": type_path,
+                "origin": "sdcard",
+                "size": f.get("size"),
+                "date": f.get("date")
+            }
+            
+            # None 값 제거
+            api_file = {k: v for k, v in api_file.items() if v is not None}
+            api_files.append(api_file)
+        
+        return api_files
+
     def _get_sd_tree(self, force_refresh=False, timeout=0.0):
         """
         /api/files?recursive=true 의 sdcard 트리와 최대한 동일하게 반환
         """
         try:
-            # 전체 파일 목록 (API 응답과 동일한 형식)
-            local_files = self._file_manager.list_files(FileDestinations.LOCAL)
+            # 로컬 파일을 API 형식으로 변환
+            local_files = self._convert_local_to_api_format(
+                self._file_manager.list_files(FileDestinations.LOCAL, recursive=True)
+            )
             
+            # SD카드 파일을 API 형식으로 변환
+            sd_files = self._convert_sd_to_api_format(self._printer.get_sd_files())
             
-            # SD카드 파일 목록 (리스트 형태)
-            sd_files = self._printer.get_sd_files()
-
-            all_files_payload = {}
-            all_files_payload["local"] = local_files
-            all_files_payload["sdcard"] = sd_files
-
-            return all_files_payload
+            # 통합된 파일 목록
+            all_files = local_files + sd_files
+            
+            return {
+                "files": all_files,
+                "local": local_files,
+                "sdcard": sd_files,
+                "summary": {
+                    "total": len(all_files),
+                    "local_count": len(local_files),
+                    "sdcard_count": len(sd_files),
+                    "local_size": sum(f.get("size", 0) for f in local_files),
+                    "sdcard_size": sum(f.get("size", 0) for f in sd_files)
+                }
+            }
 
         except Exception as e:
             self._logger.debug(f"sd 트리 조회 실패: {e}")
