@@ -2,7 +2,8 @@
 import json
 from flask import request  # Blueprint에서 사용
 import octoprint.plugin
-from octoprint.filemanager.destinations import FileDestinations
+from octoprint.filemanager import FileDestinations
+
 from octoprint.util import RepeatedTimer
 from flask import jsonify, make_response
 import requests
@@ -477,109 +478,13 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         """
         /api/files?recursive=true 의 sdcard 트리와 최대한 동일하게 반환
         """
-        try:
-            # 0) 목적지 상수 확보 (없으면 문자열 fallback)
-            try:
-                from octoprint.filemanager.destinations import FileDestinations
-                LOCAL  = getattr(FileDestinations, "LOCAL",  "local")
-                SDCARD = getattr(FileDestinations, "SDCARD", "sdcard")
-            except Exception:
-                LOCAL, SDCARD = "local", "sdcard"
+        # 전체 파일 목록 (API 응답과 동일한 형식)
+        all_files = []
+        all_files.extend(self._get_local_files_list())
+        all_files.extend(self._get_sd_files_list())
+        
+        return all_files
 
-            raw = None
-
-            # 0-1) 전체 트리 한 번 읽어 LOG로 LOCAL/SDCARD 파일 개수 확인
-            try:
-                all_tree_for_log = self._file_manager.list_files(recursive=True) or {}
-                def _count_files(node):
-                    cnt = 0
-                    def walk(n):
-                        nonlocal cnt
-                        if isinstance(n, list):
-                            for it in n: walk(it); return
-                        if isinstance(n, dict):
-                            if ("name" in n and "path" in n) or n.get("type") in ("file", "machinecode", "gcode"):
-                                cnt += 1
-                            if "children" in n: walk(n["children"])
-                            else:
-                                for v in n.values():
-                                    if isinstance(v, (dict, list)): walk(v)
-                    walk(node)
-                    return cnt
-                local_node = all_tree_for_log.get(LOCAL)
-                sd_node    = all_tree_for_log.get(SDCARD)
-                # Fallback: 키 스캔
-                if local_node is None:
-                    for k, v in all_tree_for_log.items():
-                        if str(k).lower() == "local":
-                            local_node = v; break
-                if sd_node is None:
-                    for k, v in all_tree_for_log.items():
-                        if str(k).lower().endswith("sdcard") or str(k).lower() == "sdcard":
-                            sd_node = v; break
-                lc = _count_files(local_node) if local_node is not None else 0
-                sc = _count_files(sd_node) if sd_node is not None else 0
-                self._logger.info(f"[FACTOR MQTT] FileManager counts: LOCAL={lc} SDCARD={sc}")
-            except Exception as e:
-                self._logger.debug(f"LOCAL/SDCARD 로그 수집 실패: {e}")
-
-            # 1) 목적지 지정하여 직접 조회 (올바른 방식)
-            try:
-                raw = self._file_manager.list_files(destination=SDCARD, recursive=True) or {}
-            except TypeError:
-                # 구버전 시그니처 호환
-                raw = None
-
-            # 2) 비었으면 전체 트리에서 sdcard만 추출 (키 타입 모두 대응)
-            if not raw:
-                all_tree = self._file_manager.list_files(recursive=True) or {}
-                # 우선 상수 키로 시도
-                raw = all_tree.get(SDCARD)
-                if raw is None:
-                    # 문자열 키도 스캔
-                    for k, v in all_tree.items():
-                        key = str(k).lower()
-                        if key.endswith("sdcard") or key == "sdcard":
-                            raw = v
-                            break
-
-            # 3) 여전히 비면 빈 결과
-            if not raw:
-                return {"files": []}
-
-            # 4) 이미 REST 스타일이면 그대로, 아니면 REST 스타일로 변환
-            if isinstance(raw, dict) and "files" in raw:
-                return raw
-
-            def as_api_files(node):
-                out = []
-                def walk(n):
-                    if isinstance(n, list):
-                        for it in n: walk(it); return
-                    if isinstance(n, dict):
-                        name = n.get("name") or n.get("path")
-                        path = n.get("path") or name
-                        typ  = n.get("type") or ("folder" if "children" in n else "file")
-                        if name and path:
-                            out.append({
-                                "name": name,
-                                "path": path,
-                                "origin": "sdcard",
-                                "type": typ,
-                                "size": n.get("size"),
-                            })
-                        if "children" in n: walk(n["children"])
-                        else:
-                            for v in n.values():
-                                if isinstance(v, (dict, list)): walk(v)
-                walk(node)
-                return {"files": out}
-
-            return as_api_files(raw)
-
-        except Exception as e:
-            self._logger.debug("sd 트리 조회 실패: %s", e)
-            return {"files": []}
 
 
     def _get_printer_summary(self):
