@@ -593,7 +593,8 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
                         "date": f.get("date")
                     }
                     all_files.append(file_info)
-            
+            all_files.append(local_files_dict)
+            all_files.append(sd_files)
             return all_files
 
         except Exception as e:
