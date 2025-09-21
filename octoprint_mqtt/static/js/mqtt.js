@@ -133,6 +133,8 @@ $(function () {
             var c = ps.connection || {}; var prof = (c.profile || {});
             var size = ps.size || {};
             var lines = [];
+            var iid = r && r.instance_id;
+            if (iid) lines.push("Instance ID: " + iid);
             if (c.state) lines.push("상태: " + c.state);
             if (c.port) lines.push("포트: " + c.port);
             if (c.baudrate) lines.push("속도: " + c.baudrate);
