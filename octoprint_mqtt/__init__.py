@@ -571,13 +571,12 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             # 방법 1: 리스트 형식으로 통일
             # 전체 파일 목록 (API 응답과 동일한 형식)
             local_files = self._file_manager.list_files(FileDestinations.LOCAL)
-      
-            
+            files_list = list(local_files.get("local", {}).values())
             # SD카드 파일 목록 (리스트 형태)
             sd_files = self._printer.get_sd_files()
 
             all_files_payload = {}
-            all_files_payload["local"] = local_files["local"]
+            all_files_payload["local"] = files_list
             all_files_payload["sdcard"] = sd_files
 
             
