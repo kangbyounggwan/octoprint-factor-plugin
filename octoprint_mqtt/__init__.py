@@ -396,53 +396,6 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         except Exception:
             pass
     
-    def _list_sd_files(self, max_items: int = 100):
-        files = []
-        try:
-            # 캐시(인덱스)에 올라온 내용만 조회
-            try:
-                tree = self._file_manager.list_files("sdcard", recursive=True) or {}
-            except TypeError:
-                # 구버전: origin 인자 미지원 → 전체 트리에서 sdcard만 취함
-                tree = (self._file_manager.list_files(recursive=True) or {}).get("sdcard") or {}
-
-            def collect(node):
-                if isinstance(node, list):
-                    for it in node:
-                        collect(it)
-                    return
-                if isinstance(node, dict):
-                    if "children" in node:
-                        collect(node.get("children"))
-                        return
-                    # 파일로 간주
-                    name = node.get("name") or node.get("path")
-                    path = node.get("path") or name
-                    if name:
-                        files.append({
-                            "name": node.get("name") or name,
-                            "path": path,
-                            "size": node.get("size"),
-                            "date": node.get("date"),
-                        })
-                    # 혹시 중첩 구조가 있으면 추가 순회
-                    for v in node.values():
-                        if isinstance(v, (dict, list)):
-                            collect(v)
-
-            collect(tree)
-        except Exception as e:
-            self._logger.debug(f"SD 목록 추출 실패: {e}")
-        # 경로 기준 중복 제거
-        seen = set()
-        out = []
-        for f in files:
-            key = f.get("path") or f.get("name")
-            if key and key not in seen:
-                seen.add(key)
-                out.append(f)
-        return out[:max_items]
-    
     def _check_mqtt_connection_status(self):
         """MQTT 연결 상태를 확인합니다."""
         if not self.mqtt_client:
@@ -514,6 +467,19 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         except Exception as e:
             self._logger.error(f"메시지 발행 중 오류 발생: {e}")
     
+    def _get_sd_tree(self):
+        """/api/files?recursive=true 의 sdcard 트리와 동일한 캐시 데이터를 반환"""
+        try:
+            try:
+                return self._file_manager.list_files("sdcard", recursive=True) or {}
+            except TypeError:
+                # 구버전 호환: 전체 트리에서 sdcard 분기만 반환
+                all_tree = self._file_manager.list_files(recursive=True) or {}
+                return all_tree.get("sdcard") or {}
+        except Exception as e:
+            self._logger.debug(f"sd 트리 조회 실패: {e}")
+            return {}
+
     ##~~ BlueprintPlugin mixin
     
     @octoprint.plugin.BlueprintPlugin.route("/auth/login", methods=["POST"])
@@ -525,7 +491,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             if not email or not password:
                 return make_response(jsonify({"error": "email and password required"}), 400)
 
-            api_base = (self._settings.get(["auth_api_base"]) or "http://127.0.0.1:5000").rstrip("/")
+            api_base = (self._settings.get(["auth_api_base"]) or "http://192.168.200.104:5000").rstrip("/")
             if not re.match(r"^https?://", api_base):
                 return make_response(jsonify({"error": "invalid auth_api_base"}), 500)
 
@@ -547,7 +513,8 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             "connected": self.is_connected,
             "broker_host": self._settings.get(["broker_host"]),
             "broker_port": self._settings.get(["broker_port"]),
-            "sd_files": self._list_sd_files(max_items=100)
+            # /api/files?recursive=true 의 sdcard 트리와 동일 구조
+            "sd_files": self._get_sd_tree()
         }
 
     @octoprint.plugin.BlueprintPlugin.route("/test", methods=["POST"])
