@@ -2,6 +2,91 @@
 $(function () {
     function MqttViewModel(parameters) {
       var self = this;
+    // [AUTH ADD] 설정: 실제 서버 주소로 교체하세요
+    var AUTH_URL = "{{URL}}/api/auth/login";
+
+    // [AUTH ADD] 상태 저장
+    self.isAuthed = ko.observable(!!sessionStorage.getItem("factor_mqtt.auth"));
+    self.authResp = ko.observable(self.isAuthed() ? JSON.parse(sessionStorage.getItem("factor_mqtt.auth")) : null);
+
+    // [AUTH ADD] 공용 가드: 입력/저장 비활성화
+    function setInputsDisabled(disabled) {
+      var root = $("#settings_plugin_factor_mqtt");
+      if (!root.length) return;
+      root.find("input, select, textarea, button")
+        .not("#factor-mqtt-auth-overlay *")
+        .prop("disabled", !!disabled);
+      $("#settings_dialog .modal-footer .btn-primary").prop("disabled", !!disabled);
+    }
+
+    // [AUTH ADD] 로그인 오버레이 렌더
+    self.renderLoginOverlay = function () {
+      var root = $("#settings_plugin_factor_mqtt");
+      if (!root.length) return;
+      if (!root.css("position") || root.css("position") === "static") {
+        root.css("position", "relative");
+      }
+      if (!$("#factor-mqtt-auth-overlay").length) {
+        var overlay = $(
+          '<div id="factor-mqtt-auth-overlay" style="position:absolute; inset:0; background:rgba(255,255,255,0.92); z-index:10; display:flex; align-items:center; justify-content:center;">' +
+            '<div style="width:100%; max-width:380px; background:#fff; border:1px solid #ddd; border-radius:8px; padding:16px; box-shadow:0 2px 8px rgba(0,0,0,0.1);">' +
+              '<div style="font-weight:bold; font-size:14px; margin-bottom:10px;">로그인 후 MQTT 설정을 사용할 수 있습니다</div>' +
+              '<div style="display:flex; flex-direction:column; gap:8px;">' +
+                '<input type="text" id="fm-login-id" class="form-control" placeholder="ID">' +
+                '<input type="password" id="fm-login-pw" class="form-control" placeholder="PW">' +
+                '<button id="fm-login-btn" class="btn btn-primary btn-sm">로그인</button>' +
+                '<div id="fm-login-status" style="color:#666; min-height:18px;"></div>' +
+              '</div>' +
+            '</div>' +
+          '</div>'
+        );
+        root.prepend(overlay);
+
+        $("#fm-login-btn").on("click", function () {
+          var id = ($("#fm-login-id").val() || "").trim();
+          var pw = $("#fm-login-pw").val() || "";
+          if (!id || !pw) {
+            $("#fm-login-status").text("ID와 PW를 입력하세요.");
+            return;
+          }
+          $("#fm-login-status").text("로그인 중...");
+
+          fetch(AUTH_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: id, password: pw })
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              var ok = !!(data && !data.error && (data.user || data.session));
+              if (ok) {
+                sessionStorage.setItem("factor_mqtt.auth", JSON.stringify(data));
+                self.authResp(data);
+                self.isAuthed(true);
+                self.updateAuthBarrier();
+              } else {
+                var msg = (data && data.error && data.error.message) ? data.error.message : "인증 실패";
+                $("#fm-login-status").text(msg);
+                self.isAuthed(false);
+              }
+            })
+            .catch(function (e) {
+              $("#fm-login-status").text("통신 오류: " + e);
+              self.isAuthed(false);
+            });
+        });
+      }
+    };
+
+    // [AUTH ADD] 오버레이 토글 + 가드 적용
+    self.updateAuthBarrier = function () {
+      var authed = !!self.isAuthed();
+      $("#factor-mqtt-auth-overlay").toggle(!authed);
+      setInputsDisabled(!authed);
+      if (authed) {
+        try { self.checkConnectionStatus(); } catch (e) {}
+      }
+    };
   
       self.settingsViewModel = parameters[0];
       self.loginState = parameters[1];
@@ -23,7 +108,6 @@ $(function () {
   
       self.connectionStatus = ko.observable("연결 확인 중...");
       self.isConnected = ko.observable(false);
-      self.firmwareInfo = ko.observable("미수집");
       self.onBeforeBinding = function () {
         var s = self.settingsViewModel && self.settingsViewModel.settings;
         if (!s || !s.plugins || !s.plugins.factor_mqtt) {   // ✅ 여기
@@ -47,11 +131,25 @@ $(function () {
          self.publishSnapshot(!!self.pluginSettings.publish_snapshot());
          self.periodicInterval(parseFloat(self.pluginSettings.periodic_interval()) || 1.0);
   
+        // [AUTH ADD] 로그인 오버레이 초기화
+        self.renderLoginOverlay();
+        self.updateAuthBarrier();
+
         self.checkConnectionStatus();
       };
   
       // Settings 저장 직전에 파이썬 설정(observable)으로 되돌려 넣기
+      var _orig_onSettingsBeforeSave = self.onSettingsBeforeSave;
       self.onSettingsBeforeSave = function () {
+        if (!self.isAuthed()) {
+          alert("로그인 후 저장할 수 있습니다.");
+          self.updateAuthBarrier();
+          return;
+        }
+        if (typeof _orig_onSettingsBeforeSave === "function") {
+          _orig_onSettingsBeforeSave();
+          return;
+        }
         if (!self.pluginSettings) return;
   
         self.pluginSettings.broker_host(self.brokerHost());
@@ -73,7 +171,17 @@ $(function () {
       };
   
       // 상태 확인 (GET)
+      var _orig_checkConnectionStatus = self.checkConnectionStatus;
       self.checkConnectionStatus = function () {
+        if (!self.isAuthed()) {
+          self.connectionStatus("로그인이 필요합니다.");
+          self.isConnected(false);
+          return;
+        }
+        if (typeof _orig_checkConnectionStatus === "function") {
+          _orig_checkConnectionStatus();
+          return;
+        }
         if (!self.loginState.isUser()) {
           self.connectionStatus("로그인이 필요합니다.");
           self.isConnected(false);
@@ -85,7 +193,6 @@ $(function () {
             if (r && r.connected) {
               self.connectionStatus("MQTT 브로커에 연결됨");
               self.isConnected(true);
-              self.firmwareInfo(r && r.firmware_info ? r.firmware_info : (self.firmwareInfo() || "미수집"));
             } else {
               self.connectionStatus("MQTT 브로커에 연결되지 않음");
               self.isConnected(false);
@@ -94,17 +201,6 @@ $(function () {
           .fail(function () {
             self.connectionStatus("연결 상태를 확인할 수 없습니다.");
             self.isConnected(false);
-          });
-      };
-
-      // 펌웨어 정보 새로고침
-      self.refreshFirmware = function () {
-        OctoPrint.ajax("GET", "plugin/factor_mqtt/status")
-          .done(function (r) {
-            self.firmwareInfo(r && r.firmware_info ? r.firmware_info : "미수집");
-          })
-          .fail(function () {
-            self.firmwareInfo("조회 실패");
           });
       };
   

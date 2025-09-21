@@ -47,8 +47,6 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         self.is_connected = False
         self._snapshot_timer = None
         self._gcode_jobs = {}
-        self._firmware_info = None
-        self._firmware_info_ts = None
     
     ##~~ SettingsPlugin mixin
     
@@ -157,14 +155,6 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             self._publish_temperature(payload, topic_prefix)
         elif event == "GcodeReceived":
             self._publish_gcode(payload, topic_prefix)
-            try:
-                line = (payload or {}).get("line") or ""
-                if isinstance(line, str) and "FIRMWARE_NAME:" in line:
-                    self._firmware_info = line.strip()
-                    self._firmware_info_ts = time.time()
-                    self._logger.info(f"[FACTOR MQTT] 펌웨어 정보 갱신: {self._firmware_info}")
-            except Exception as e:
-                self._logger.debug(f"펌웨어 파싱 실패: {e}")
     
     ##~~ Private methods
     
@@ -481,9 +471,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         return {
             "connected": self.is_connected,
             "broker_host": self._settings.get(["broker_host"]),
-            "broker_port": self._settings.get(["broker_port"]),
-            "firmware_info": self._firmware_info,
-            "firmware_ts": self._firmware_info_ts,
+            "broker_port": self._settings.get(["broker_port"])
         }
 
     @octoprint.plugin.BlueprintPlugin.route("/test", methods=["POST"])
