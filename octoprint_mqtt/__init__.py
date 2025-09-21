@@ -569,34 +569,19 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         """
         try:
             # 방법 1: 리스트 형식으로 통일
-            all_files = {}
-            list_files = []
-            # 로컬 파일 평면화
-            local_files_dict = self._file_manager.list_files(FileDestinations.LOCAL, recursive=True)
-            for file_data in local_files_dict.values():
-                if file_data["type"] != "folder":  # 파일만 처리
-                    file_data["origin"] = "local"
-                    list_files.append(file_data)
+            # 전체 파일 목록 (API 응답과 동일한 형식)
+            local_files = self._file_manager.list_files(FileDestinations.LOCAL)
             
-            # SD카드 파일 추가
+            
+            # SD카드 파일 목록 (리스트 형태)
             sd_files = self._printer.get_sd_files()
-            for f in sd_files:
-                type_path = octoprint.filemanager.get_file_type(f["name"])
-                if type_path:
-                    file_info = {
-                        "name": f["name"],
-                        "display": f["display"] if f["display"] else f["name"],
-                        "path": f["name"],
-                        "type": type_path[0],
-                        "origin": "sdcard",
-                        "size": f.get("size"),
-                        "date": f.get("date")
-                    }
-                    list_files.append(file_info)
-            all_files["local"] = local_files_dict
-            all_files["sdcard"] = sd_files
-            all_files["files"] = list_files
-            return all_files
+
+            all_files_payload = {}
+            all_files_payload["local"] = local_files
+            all_files_payload["sdcard"] = sd_files
+
+            
+            return all_files_payload
 
         except Exception as e:
             self._logger.debug(f"sd 트리 조회 실패: {e}")
