@@ -32,9 +32,9 @@ $(function () {
         var pw = $("#fm-login-pw").val() || "";
         if (!email || !pw) { $("#fm-login-status").text("Email과 PW를 입력하세요."); return; }
         $("#fm-login-status").text("로그인 중...");
-        fetch(AUTH_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: email, password: pw }) })
-          .then(function (r) { return r.json(); })
-          .then(function (data) {
+        // OctoPrint.postJson: 자동으로 /api/ prefix와 X-Api-Key 헤더 포함
+        OctoPrint.postJson(AUTH_URL, { email: email, password: pw })
+          .done(function (data) {
             var ok = !!(data && (data.success === true || (!data.error && (data.user || data.session))));
             if (ok) {
               sessionStorage.setItem("factor_mqtt.auth", JSON.stringify(data));
@@ -47,7 +47,7 @@ $(function () {
               $("#fm-login-status").text(msg); self.isAuthed(false);
             }
           })
-          .catch(function (e) { $("#fm-login-status").text("통신 오류: " + e); self.isAuthed(false); });
+          .fail(function (xhr) { var m = (xhr && xhr.responseJSON && (xhr.responseJSON.error || xhr.responseJSON.message)) || "로그인 실패"; $("#fm-login-status").text(m); self.isAuthed(false); });
       });
     };
 
@@ -75,6 +75,29 @@ $(function () {
       $("#fm-instance-id").val(self.instanceId());
       if (!$("#fm-register-btn").data("bound")) {
         $("#fm-register-btn").data("bound", true);
+        // 상태 패널 채우기: 서버 status에서 요약 읽기
+        OctoPrint.ajax("GET", "plugin/factor_mqtt/status").done(function (r) {
+          try {
+            var ps = (r && r.printer_summary) || {};
+            var c = ps.connection || {}; var prof = (c.profile || {});
+            var size = ps.size || {};
+            var lines = [];
+            if (c.state) lines.push("상태: " + c.state);
+            if (c.port) lines.push("포트: " + c.port);
+            if (c.baudrate) lines.push("속도: " + c.baudrate);
+            if (prof.name) lines.push("프로필: " + prof.name);
+            if (prof.model) lines.push("모델: " + prof.model);
+            if (size.width || size.depth || size.height) {
+              lines.push("사이즈: " + [size.width, size.depth, size.height].filter(Boolean).join(" x "));
+            }
+            var html = lines.map(function (t){ return '<div class="text-muted">' + t + '</div>'; }).join("");
+            if (!$("#fm-register-conn").length) {
+              $("#tab-register").append('<div id="fm-register-conn" style="margin-top:8px;">' + html + '</div>');
+            } else {
+              $("#fm-register-conn").html(html);
+            }
+          } catch (e) {}
+        });
         $("#fm-instance-gen").on("click", function () {
           var iid = genUuid(); self.instanceId(iid); $("#fm-instance-id").val(iid);
         });
@@ -82,16 +105,22 @@ $(function () {
           var iid = ($("#fm-instance-id").val() || "").trim();
           if (!iid) { $("#fm-register-status").text("Instance ID를 입력/생성하세요."); return; }
           $("#fm-register-status").text("등록 중...");
-          var auth = self.authResp() || {}; var user = auth.user || null;
-          fetch("plugin/factor_mqtt/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ instance_id: iid, user: user }) })
-          .then(function (r) { return r.json().then(function (j){ return {ok:r.ok, status:r.status, data:j}; }); })
-          .then(function (res) {
-            if (res.ok || (res.data && res.data.success === true)) {
-              $("#fm-register-status").text("등록 성공"); sessionStorage.setItem("factor_mqtt.instanceId", iid);
-              self.wizardStep(3); self.updateAuthBarrier();
-            } else { var msg = (res.data && (res.data.error || res.data.message)) || ("등록 실패 (" + res.status + ")"); $("#fm-register-status").text(msg); }
-          })
-          .catch(function (e) { $("#fm-register-status").text("통신 오류: " + e); });
+          var auth = self.authResp() || {}; var user = auth.user || null; var token = auth.access_token || auth.accessToken;
+          var body = { instance_id: iid, user: user && { id: user.id } };
+          if (token) body.access_token = token;
+          OctoPrint.postJson("plugin/factor_mqtt/register", body)
+            .done(function (data) {
+              if (data && (data.success === true || data.raw || Object.keys(data).length)) {
+                $("#fm-register-status").text("등록 성공"); sessionStorage.setItem("factor_mqtt.instanceId", iid);
+                self.wizardStep(3); self.updateAuthBarrier();
+              } else {
+                $("#fm-register-status").text("등록 실패");
+              }
+            })
+            .fail(function (xhr) {
+              var msg = (xhr && xhr.responseJSON && (xhr.responseJSON.error || xhr.responseJSON.message)) || ("등록 실패 (" + (xhr && xhr.status) + ")");
+              $("#fm-register-status").text(msg);
+            });
         });
       }
     };

@@ -484,6 +484,61 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             self._logger.debug(f"sd 트리 조회 실패: {e}")
             return {}
 
+    def _get_printer_summary(self):
+        try:
+            conn = self._printer.get_current_connection() or {}
+            # OctoPrint는 (state, port, baudrate, profile) 형태를 반환하는 경우가 많음
+            state = None
+            port = None
+            baud = None
+            profile = None
+            if isinstance(conn, (list, tuple)) and len(conn) >= 4:
+                state, port, baud, profile = conn[0], conn[1], conn[2], conn[3]
+            elif isinstance(conn, dict):
+                state = conn.get("state")
+                port = conn.get("port")
+                baud = conn.get("baudrate")
+                profile = conn.get("profile") or {}
+            else:
+                profile = {}
+
+            prof_id = None
+            prof_name = None
+            prof_model = None
+            heated_bed = None
+            volume = {}
+            if isinstance(profile, dict):
+                prof_id = profile.get("id")
+                prof_name = profile.get("name")
+                prof_model = profile.get("model")
+                heated_bed = profile.get("heatedBed")
+                volume = profile.get("volume") or {}
+
+            size = {
+                "width": volume.get("width"),
+                "depth": volume.get("depth"),
+                "height": volume.get("height"),
+            }
+
+            return {
+                "connection": {
+                    "state": state,
+                    "port": port,
+                    "baudrate": baud,
+                    "profile": {
+                        "id": prof_id,
+                        "name": prof_name,
+                        "model": prof_model,
+                        "heatedBed": heated_bed,
+                        "volume": volume,
+                    },
+                },
+                "size": size,
+            }
+        except Exception as e:
+            self._logger.debug(f"summary 조회 실패: {e}")
+            return {}
+
     def _ensure_instance_id(self):
         iid = self._settings.get(["instance_id"]) or ""
         if not iid:
@@ -506,7 +561,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             if not email or not password:
                 return make_response(jsonify({"error": "email and password required"}), 400)
 
-            api_base = (self._settings.get(["auth_api_base"]) or "http://192.168.200.104:5000").rstrip("/")
+            api_base = (self._settings.get(["auth_api_base"])).rstrip("/")
             if not re.match(r"^https?://", api_base):
                 return make_response(jsonify({"error": "invalid auth_api_base"}), 500)
 
@@ -528,6 +583,13 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             instance_id = (data.get("instance_id") or "").strip() or self._ensure_instance_id()
             user = data.get("user") or {}
             access_token = (data.get("access_token") or data.get("accessToken") or "").strip()
+            # 헤더 우선: Authorization: Bearer <token>
+            try:
+                hdr_auth = request.headers.get("Authorization") or ""
+            except Exception:
+                hdr_auth = ""
+            if hdr_auth and hdr_auth.lower().startswith("bearer "):
+                access_token = hdr_auth.split(" ", 1)[1].strip() or access_token
             if not instance_id:
                 return make_response(jsonify({"success": False, "error": "missing instance_id"}), 400)
 
@@ -589,6 +651,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             "sd_files": self._get_sd_tree(),
             "registered": bool(self._settings.get(["registered"]) or False),
             "instance_id": self._settings.get(["instance_id"]) or None,
+            "printer_summary": self._get_printer_summary(),
         }
 
     @octoprint.plugin.BlueprintPlugin.route("/test", methods=["POST"])
