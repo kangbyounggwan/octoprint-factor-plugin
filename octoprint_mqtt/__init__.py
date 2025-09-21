@@ -798,8 +798,9 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             # (선택) 메인 클라이언트가 붙어있다면 스냅샷 1회 발행
             try:
                 if self.is_connected and self.mqtt_client:
-                    self._publish_message(f"{self._settings.get(['topic_prefix']) or 'octoprint'}/status",
-                                        json.dumps(self._make_snapshot()))
+                    inst = self._settings.get(["instance_id"]) or "unknown"
+                    self._publish_message(f"{self._settings.get(['topic_prefix']) or 'octoprint'}/status/{inst}",
+                                          json.dumps(self._make_snapshot()))
                     self._logger.info("[TEST] 스냅샷 전송 완료")
             except Exception as e:
                 self._logger.warning("[TEST] 스냅샷 전송 실패: %s", e)
