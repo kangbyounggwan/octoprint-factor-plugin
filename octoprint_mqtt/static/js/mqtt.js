@@ -90,12 +90,8 @@ $(function () {
             if (size.width || size.depth || size.height) {
               lines.push("사이즈: " + [size.width, size.depth, size.height].filter(Boolean).join(" x "));
             }
-            var html = lines.map(function (t){ return '<div class="text-muted">' + t + '</div>'; }).join("");
-            if (!$("#fm-register-conn").length) {
-              $("#tab-register").append('<div id="fm-register-conn" style="margin-top:8px;">' + html + '</div>');
-            } else {
-              $("#fm-register-conn").html(html);
-            }
+            var html = lines.map(function (t){ return '<div class="text-info">' + t + '</div>'; }).join("");
+            $("#fm-register-conn").html(html || '<div class="text-muted">프린터 연결 정보가 없습니다.</div>');
           } catch (e) {}
         });
         $("#fm-instance-gen").on("click", function () {
