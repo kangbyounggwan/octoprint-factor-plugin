@@ -83,27 +83,19 @@ $(function () {
         if (token) sel.append('<option value="__token__">로그인 토큰 사용</option>');
 
         // 기존 등록된 UUID 조회(API)
+        // 기존 UUID 목록은 서버 프록시로 안전하게 호출
         if (token) {
-          OctoPrint.ajax("GET", "plugin/factor_mqtt/status").done(function () {
-            // 프록시를 거치지 않고 외부로 직접 나가야 하므로 서버 프록시 라우트를 추가하지 않고, 임시로 클라이언트에서 직접 호출
-            // 보안상 더 안전하려면 서버에 /printers/summary 프록시 라우트를 추가하세요.
-            try {
-              $.ajax({
-                url: (self.pluginSettings && self.pluginSettings.register_api_base ? self.pluginSettings.register_api_base() : null) ? (self.pluginSettings.register_api_base() + "/api/printers/summary") : "/",
-                method: "GET",
-                headers: { "Authorization": "Bearer " + token },
-              }).done(function (resp) {
-                try {
-                  var list = (resp && resp.items) || resp || [];
-                  list.forEach(function (it) {
-                    var id = it.uuid || it.instance_id || it.id;
-                    var name = it.name || it.label || id;
-                    if (id) sel.append('<option value="' + id + '">' + name + ' (' + id + ')</option>');
-                  });
-                } catch (e) {}
-              }).fail(function () { /* 무시 */ });
-            } catch (e) {}
-          });
+          OctoPrint.ajax("GET", "plugin/factor_mqtt/summary", { headers: { "Authorization": "Bearer " + token } })
+            .done(function (resp) {
+              try {
+                var list = (resp && resp.items) || resp || [];
+                list.forEach(function (it) {
+                  var id = it.uuid || it.instance_id || it.id;
+                  var name = it.name || it.label || id;
+                  if (id) sel.append('<option value="' + id + '">' + name + ' (' + id + ')</option>');
+                });
+              } catch (e) {}
+            });
         }
 
         // 셀렉트 변경 시 UI 토글

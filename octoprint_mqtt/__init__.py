@@ -72,7 +72,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             periodic_interval=1.0,
             auth_api_base="http://192.168.200.104:5000",
             register_api_base="http://192.168.200.104:5000",
-            instance_id=str(uuid.uuid4()),
+            instance_id="",
             registered=False,
             receive_gcode_enabled=True,
             receive_topic_suffix="gcode_in",
@@ -605,8 +605,8 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         if not iid:
             try:
                 iid = str(uuid.uuid4())
+                # 메모리에만 보관하고, 등록 성공 시에만 저장하도록 변경
                 self._settings.set(["instance_id"], iid)
-                self._settings.save()
             except Exception:
                 pass
         return iid
@@ -633,6 +633,27 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             except Exception:
                 is_json = False
             out = (resp.json() if is_json else {"raw": resp.text})
+            return make_response(jsonify(out), resp.status_code)
+        except Exception as e:
+            return make_response(jsonify({"error": str(e)}), 500)
+
+    @octoprint.plugin.BlueprintPlugin.route("/summary", methods=["GET"])
+    def proxy_printers_summary(self):
+        """사용자 ID에 등록된 프린터 요약을 외부 API로부터 안전하게 프록시"""
+        try:
+            base = (self._settings.get(["register_api_base"]) or self._settings.get(["auth_api_base"]) or "").rstrip("/")
+            if not base or not re.match(r"^https?://", base):
+                return make_response(jsonify({"error": "invalid register_api_base"}), 500)
+            token = request.headers.get("Authorization") or ""
+            headers = {"Content-Type": "application/json"}
+            if token:
+                headers["Authorization"] = token
+            url = f"{base}/api/printers/summary"
+            resp = requests.get(url, headers=headers, timeout=8)
+            try:
+                out = resp.json()
+            except Exception:
+                out = {"raw": resp.text}
             return make_response(jsonify(out), resp.status_code)
         except Exception as e:
             return make_response(jsonify({"error": str(e)}), 500)
