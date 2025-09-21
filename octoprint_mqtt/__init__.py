@@ -480,11 +480,48 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         try:
             # 0) 목적지 상수 확보 (없으면 문자열 fallback)
             try:
+                from octoprint.filemanager.destinations import FileDestinations
+                LOCAL  = getattr(FileDestinations, "LOCAL",  "local")
                 SDCARD = getattr(FileDestinations, "SDCARD", "sdcard")
             except Exception:
-                SDCARD = "sdcard"
+                LOCAL, SDCARD = "local", "sdcard"
 
             raw = None
+
+            # 0-1) 전체 트리 한 번 읽어 LOG로 LOCAL/SDCARD 파일 개수 확인
+            try:
+                all_tree_for_log = self._file_manager.list_files(recursive=True) or {}
+                def _count_files(node):
+                    cnt = 0
+                    def walk(n):
+                        nonlocal cnt
+                        if isinstance(n, list):
+                            for it in n: walk(it); return
+                        if isinstance(n, dict):
+                            if ("name" in n and "path" in n) or n.get("type") in ("file", "machinecode", "gcode"):
+                                cnt += 1
+                            if "children" in n: walk(n["children"])
+                            else:
+                                for v in n.values():
+                                    if isinstance(v, (dict, list)): walk(v)
+                    walk(node)
+                    return cnt
+                local_node = all_tree_for_log.get(LOCAL)
+                sd_node    = all_tree_for_log.get(SDCARD)
+                # Fallback: 키 스캔
+                if local_node is None:
+                    for k, v in all_tree_for_log.items():
+                        if str(k).lower() == "local":
+                            local_node = v; break
+                if sd_node is None:
+                    for k, v in all_tree_for_log.items():
+                        if str(k).lower().endswith("sdcard") or str(k).lower() == "sdcard":
+                            sd_node = v; break
+                lc = _count_files(local_node) if local_node is not None else 0
+                sc = _count_files(sd_node) if sd_node is not None else 0
+                self._logger.info(f"[FACTOR MQTT] FileManager counts: LOCAL={lc} SDCARD={sc}")
+            except Exception as e:
+                self._logger.debug(f"LOCAL/SDCARD 로그 수집 실패: {e}")
 
             # 1) 목적지 지정하여 직접 조회 (올바른 방식)
             try:
@@ -935,7 +972,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             },
             "temperatures": temps,                      # tool0/bed/chamber: actual/target/offset
             "connection": conn,                         # port/baudrate/printerProfile/state
-            "sd_files": self._get_sd_tree(),
+            "sd": self._get_sd_tree(),                  # REST 스타일 { files: [...] }
         }
         return snapshot
 
