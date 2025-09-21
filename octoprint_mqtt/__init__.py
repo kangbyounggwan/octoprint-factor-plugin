@@ -223,6 +223,16 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
                 topic = f"{topic_prefix}/{suffix}/#"
                 self.mqtt_client.subscribe(topic, qos=qos)
                 self._logger.info(f"[FACTOR MQTT] subscribe: {topic} (qos={qos})")
+                
+                # control/<instance_id> 제어 채널 구독 (prefix 없는 순수 토픽)
+                inst = self._settings.get(["instance_id"]) or "unknown"
+                control_topic = f"control/{inst}"
+
+                self.mqtt_client.subscribe(control_topic, qos=qos)
+                # prefix 버전도 함께 구독 (호환)
+                control_topic2 = f"{topic_prefix}/control/{inst}"
+                self.mqtt_client.subscribe(control_topic2, qos=qos)
+                self._logger.info(f"[FACTOR MQTT] subscribe: {control_topic} | {control_topic2}")
             except Exception as e:
                 self._logger.warning(f"[FACTOR MQTT] subscribe 실패: {e}")
         else:
@@ -272,11 +282,22 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
     def _on_mqtt_message(self, client, userdata, msg):
         try:
             if not bool(self._settings.get(["receive_gcode_enabled"])):
-                return
+                pass
             topic = msg.topic or ""
             topic_prefix = self._settings.get(["topic_prefix"]) or "octoprint"
             suffix = self._settings.get(["receive_topic_suffix"]) or "gcode_in"
             if not topic.startswith(f"{topic_prefix}/{suffix}"):
+                # 제어 토픽 검사
+                inst = self._settings.get(["instance_id"]) or "unknown"
+                if topic not in (f"control/{inst}", f"{topic_prefix}/control/{inst}"):
+                    return
+                # control payload 처리
+                payload = msg.payload.decode("utf-8", errors="ignore") if isinstance(msg.payload, (bytes, bytearray)) else str(msg.payload or "")
+                try:
+                    data = json.loads(payload or "{}")
+                except Exception:
+                    data = {}
+                self._handle_control_message(data)
                 return
             payload = msg.payload.decode("utf-8", errors="ignore") if isinstance(msg.payload, (bytes, bytearray)) else str(msg.payload or "")
             data = json.loads(payload or "{}")
@@ -372,6 +393,72 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             return
 
         self._logger.warning(f"[FACTOR MQTT] 지원되지 않는 action={action}")
+
+    def _handle_control_message(self, data: dict):
+        t = (data.get("type") or "").lower()
+        if t == "pause":
+            res = self.pause_print()
+            self._logger.info(f"[CONTROL] pause -> {res}")
+            return
+        if t == "resume":
+            res = self.resume_print()
+            self._logger.info(f"[CONTROL] resume -> {res}")
+            return
+        if t == "cancel":
+            res = self.cancel_print()
+            self._logger.info(f"[CONTROL] cancel -> {res}")
+            return
+        if t == "home":
+            axes_s = (data.get("axes") or "XYZ")
+            axes_s = axes_s if isinstance(axes_s, str) else "".join(axes_s)
+            axes = []
+            s = (axes_s or "").lower()
+            if "x" in s: axes.append("x")
+            if "y" in s: axes.append("y")
+            if "z" in s: axes.append("z")
+            if not axes:
+                axes = ["x", "y", "z"]
+            res = self.home_axes(axes)
+            self._logger.info(f"[CONTROL] home {axes} -> {res}")
+            return
+        self._logger.warning(f"[CONTROL] 알 수 없는 type={t}")
+
+    # --- Control helpers ---
+    def pause_print(self):
+        if not self._printer.is_printing():
+            return {"error": "현재 프린트 중이 아닙니다"}
+        try:
+            self._printer.pause_print(tags={"source:plugin"})
+            return {"success": True, "message": "프린트 일시정지"}
+        except Exception as e:
+            return {"error": f"일시정지 실패: {str(e)}"}
+
+    def resume_print(self):
+        if not self._printer.is_paused():
+            return {"error": "현재 일시정지 상태가 아닙니다"}
+        try:
+            self._printer.resume_print(tags={"source:plugin"})
+            return {"success": True, "message": "프린트 재개"}
+        except Exception as e:
+            return {"error": f"재개 실패: {str(e)}"}
+
+    def cancel_print(self):
+        if not (self._printer.is_printing() or self._printer.is_paused()):
+            return {"error": "현재 프린트 중이거나 일시정지 상태가 아닙니다"}
+        try:
+            self._printer.cancel_print(tags={"source:plugin"})
+            return {"success": True, "message": "프린트 취소"}
+        except Exception as e:
+            return {"error": f"취소 실패: {str(e)}"}
+
+    def home_axes(self, axes):
+        if not self._printer.is_operational():
+            return {"error": "프린터가 연결되지 않았습니다"}
+        try:
+            self._printer.home(axes, tags={"source:plugin"})
+            return {"success": True, "message": f"홈킹 시작: {axes}"}
+        except Exception as e:
+            return {"error": f"홈킹 실패: {str(e)}"}
 
     def _finalize_job_to_sd(self, filename: str, content: bytes):
         from octoprint.filemanager.destinations import FileDestinations
@@ -474,6 +561,80 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         except Exception as e:
             self._logger.error(f"메시지 발행 중 오류 발생: {e}")
     
+    def _flatten_local(local_tree, base_url: str, include_refs: bool):
+        out = []
+        def push(name, path, meta):
+            ftype = (meta.get("type") if isinstance(meta, dict) else None)
+            if not ftype:
+                ftype, type_path = _guess_type(name)
+            else:
+                _, type_path = _guess_type(name)
+            item = {
+                "name": name,
+                "path": path.replace("\\", "/"),
+                "origin": "local",
+                "size": (meta.get("size") if isinstance(meta, dict) else None),
+                "type": ftype,
+                "typePath": type_path,
+                "display": (meta.get("display") if isinstance(meta, dict) else name),
+            }
+            if include_refs:
+                item["refs"] = { "resource": f"{base_url}/api/files/local/{quote(item['path'])}" }
+            out.append(item)
+
+        def walk(node, prefix=""):
+            if isinstance(node, dict):
+                # FileManager는 보통 { "file.gco": {..}, "folder": {children: {...}} } 형태
+                for key, meta in node.items():
+                    if isinstance(meta, dict) and "children" in meta:
+                        walk(meta.get("children") or {}, os.path.join(prefix, key))
+                        continue
+                    name = (meta.get("name") if isinstance(meta, dict) else None) or key
+                    path = (meta.get("path") if isinstance(meta, dict) else None) or os.path.join(prefix, name)
+                    push(name, path, meta or {})
+            elif isinstance(node, list):
+                for it in node:
+                    walk(it, prefix)
+        walk(local_tree or {})
+        return out
+
+    def _flatten_sd(sd_list, base_url: str, include_refs: bool):
+        out = []
+        def push(name, path, meta):
+            ftype = meta.get("type")
+            type_path = meta.get("typePath")
+            if not ftype:
+                ftype, type_path = _guess_type(name)
+            item = {
+                "name": name,
+                "path": path or name,
+                "origin": "sdcard",
+                "size": meta.get("size"),
+                "type": ftype,
+                "typePath": type_path,
+                "display": meta.get("display") or f"/{name}",
+            }
+            if include_refs:
+                item["refs"] = { "resource": f"{base_url}/api/files/sdcard/{quote(name)}" }
+            out.append(item)
+
+        def walk(node, prefix=""):
+            if isinstance(node, list):
+                for it in node:
+                    walk(it, prefix)
+            elif isinstance(node, dict):
+                # 일부 펌웨어/버전에 따라 children을 가질 수 있으니 처리
+                if "children" in node:
+                    walk(node.get("children") or [], prefix)
+                    return
+                name = node.get("name") or node.get("path")
+                if not name:
+                    return
+                path = node.get("path") or name
+                push(name, path, node)
+        walk(sd_list or [])
+        return out
+
     def _get_sd_tree(self, force_refresh=False, timeout=0.0):
         """
         /api/files?recursive=true 의 sdcard 트리와 최대한 동일하게 반환
@@ -485,11 +646,13 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             # SD카드 파일 목록 (리스트 형태)
             sd_files = self._printer.get_sd_files()
 
-            all_files_payload = {}
-            all_files_payload["local"] = local_files
-            all_files_payload["sdcard"] = sd_files
 
-            return all_files_payload
+            local_files_tree = _flatten_local(local_files, base_url, include_refs)
+            sd_files_tree    = _flatten_sd(sd_files, base_url, include_refs)
+
+            files = local_files_tree + sd_files_tree
+
+            return files
 
         except Exception as e:
             self._logger.debug(f"sd 트리 조회 실패: {e}")
