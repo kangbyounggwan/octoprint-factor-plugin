@@ -1,9 +1,9 @@
 <!-- settings_plugin_factor_mqtt 의 컨텐츠만 넣어야 합니다. tab-pane 같은 래퍼 금지 -->
 <div id="settings_plugin_factor_mqtt" class="factor-mqtt">
   <ul class="nav nav-tabs" style="margin-bottom:10px;">
-    <li data-bind="css: { active: wizardStep() === 1 }"><a href="#" onclick="return false;">1. 로그인</a></li>
-    <li data-bind="css: { active: wizardStep() === 2 }"><a href="#" onclick="return false;">2. 등록</a></li>
-    <li data-bind="css: { active: wizardStep() === 3 }"><a href="#" onclick="return false;">3. MQTT 설정</a></li>
+    <li data-bind="css: { active: wizardStep() === 1 }"><a href="#" data-step="1">1. 로그인</a></li>
+    <li data-bind="css: { active: wizardStep() === 2 }"><a href="#" data-step="2">2. 등록</a></li>
+    <li data-bind="css: { active: wizardStep() === 3 }"><a href="#" data-step="3">3. MQTT 설정</a></li>
   </ul>
 
   <div id="tab-login" data-bind="visible: wizardStep() === 1" style="margin-bottom:12px;">
