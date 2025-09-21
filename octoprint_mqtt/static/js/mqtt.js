@@ -3,7 +3,7 @@ $(function () {
     function MqttViewModel(parameters) {
       var self = this;
     // [AUTH ADD] 설정: 실제 서버 주소로 교체하세요
-    var AUTH_URL = "http://192.168.200.104:5000/api/auth/login";
+    var AUTH_URL = "plugin/factor_mqtt/auth/login";
 
     // [AUTH ADD] 상태 저장
     self.isAuthed = ko.observable(!!sessionStorage.getItem("factor_mqtt.auth"));

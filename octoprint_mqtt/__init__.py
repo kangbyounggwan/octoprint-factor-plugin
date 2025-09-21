@@ -3,6 +3,9 @@ import json
 from flask import request  # Blueprint에서 사용
 import octoprint.plugin
 from octoprint.util import RepeatedTimer
+from flask import jsonify, make_response
+import requests
+import re
 import base64
 import io
 import time
@@ -65,6 +68,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             publish_gcode=False,
             publish_snapshot=True,
             periodic_interval=1.0,
+            auth_api_base="http://192.168.200.104:5000",
             receive_gcode_enabled=True,
             receive_topic_suffix="gcode_in",
             receive_target_default="local_print",
@@ -512,6 +516,30 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
     
     ##~~ BlueprintPlugin mixin
     
+    @octoprint.plugin.BlueprintPlugin.route("/auth/login", methods=["POST"])
+    def auth_login(self):
+        try:
+            data = request.get_json(force=True) or {}
+            email = (data.get("email") or "").strip()
+            password = data.get("password") or ""
+            if not email or not password:
+                return make_response(jsonify({"error": "email and password required"}), 400)
+
+            api_base = (self._settings.get(["auth_api_base"]) or "http://127.0.0.1:5000").rstrip("/")
+            if not re.match(r"^https?://", api_base):
+                return make_response(jsonify({"error": "invalid auth_api_base"}), 500)
+
+            url = f"{api_base}/api/auth/login"
+            resp = requests.post(url, json={"email": email, "password": password}, timeout=8)
+            try:
+                is_json = (resp.headers.get("content-type", "").lower().startswith("application/json"))
+            except Exception:
+                is_json = False
+            out = (resp.json() if is_json else {"raw": resp.text})
+            return make_response(jsonify(out), resp.status_code)
+        except Exception as e:
+            return make_response(jsonify({"error": str(e)}), 500)
+
     @octoprint.plugin.BlueprintPlugin.route("/status", methods=["GET"])
     def get_mqtt_status(self):
         """MQTT 연결 상태를 반환합니다."""
