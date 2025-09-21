@@ -17,7 +17,7 @@ $(function () {
       var root = $("#settings_plugin_factor_mqtt");
       if (!root.length) return;
       root.find("input, select, textarea, button")
-        .not("#factor-mqtt-auth-overlay *, #factor-mqtt-register-overlay *")
+        .not("#factor-mqtt-auth-overlay *, #factor-mqtt-register-overlay *, #tab-login *, #tab-register *")
         .prop("disabled", !!disabled);
       $("#settings_dialog .modal-footer .btn-primary").prop("disabled", !!disabled);
     }
