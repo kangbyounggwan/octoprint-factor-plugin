@@ -395,31 +395,49 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
     def _list_sd_files(self, max_items: int = 100):
         files = []
         try:
-            tree = self._file_manager.list_files(recursive=True) or {}
-            sd_root = (tree.get("sdcard") or {})
+            # 캐시(인덱스)에 올라온 내용만 조회
+            try:
+                tree = self._file_manager.list_files("sdcard", recursive=True) or {}
+            except TypeError:
+                # 구버전: origin 인자 미지원 → 전체 트리에서 sdcard만 취함
+                tree = (self._file_manager.list_files(recursive=True) or {}).get("sdcard") or {}
 
-            def walk(node, base_path=""):
-                if not isinstance(node, dict):
+            def collect(node):
+                if isinstance(node, list):
+                    for it in node:
+                        collect(it)
                     return
-                for key, val in node.items():
-                    if isinstance(val, dict) and ("children" in val):
-                        name = val.get("name") or key or ""
-                        walk(val.get("children") or {}, base_path + (name + "/" if name else ""))
-                        continue
-                    if isinstance(val, dict):
-                        name = val.get("name") or key
-                        path = val.get("path") or (base_path + (name or ""))
+                if isinstance(node, dict):
+                    if "children" in node:
+                        collect(node.get("children"))
+                        return
+                    # 파일로 간주
+                    name = node.get("name") or node.get("path")
+                    path = node.get("path") or name
+                    if name:
                         files.append({
-                            "name": name,
+                            "name": node.get("name") or name,
                             "path": path,
-                            "size": val.get("size"),
-                            "date": val.get("date"),
+                            "size": node.get("size"),
+                            "date": node.get("date"),
                         })
+                    # 혹시 중첩 구조가 있으면 추가 순회
+                    for v in node.values():
+                        if isinstance(v, (dict, list)):
+                            collect(v)
 
-            walk(sd_root)
+            collect(tree)
         except Exception as e:
             self._logger.debug(f"SD 목록 추출 실패: {e}")
-        return files[:max_items]
+        # 경로 기준 중복 제거
+        seen = set()
+        out = []
+        for f in files:
+            key = f.get("path") or f.get("name")
+            if key and key not in seen:
+                seen.add(key)
+                out.append(f)
+        return out[:max_items]
     
     def _check_mqtt_connection_status(self):
         """MQTT 연결 상태를 확인합니다."""
