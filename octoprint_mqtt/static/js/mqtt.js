@@ -75,6 +75,57 @@ $(function () {
       $("#fm-instance-id").val(self.instanceId());
       if (!$("#fm-register-btn").data("bound")) {
         $("#fm-register-btn").data("bound", true);
+        // 토큰 선택 셀렉트 채우기: 현재는 로그인 토큰 1개만 존재하므로, "신규 등록"과 "로그인 토큰 사용" 두 옵션 제공
+        var auth = self.authResp() || {}; var token = auth.access_token || auth.accessToken;
+        var sel = $("#fm-register-select");
+        sel.empty();
+        sel.append('<option value="__new__">신규 등록</option>');
+        if (token) sel.append('<option value="__token__">로그인 토큰 사용</option>');
+
+        // 기존 등록된 UUID 조회(API)
+        if (token) {
+          OctoPrint.ajax("GET", "plugin/factor_mqtt/status").done(function () {
+            // 프록시를 거치지 않고 외부로 직접 나가야 하므로 서버 프록시 라우트를 추가하지 않고, 임시로 클라이언트에서 직접 호출
+            // 보안상 더 안전하려면 서버에 /printers/summary 프록시 라우트를 추가하세요.
+            try {
+              $.ajax({
+                url: (self.pluginSettings && self.pluginSettings.register_api_base ? self.pluginSettings.register_api_base() : null) ? (self.pluginSettings.register_api_base() + "/api/printers/summary") : "/",
+                method: "GET",
+                headers: { "Authorization": "Bearer " + token },
+              }).done(function (resp) {
+                try {
+                  var list = (resp && resp.items) || resp || [];
+                  list.forEach(function (it) {
+                    var id = it.uuid || it.instance_id || it.id;
+                    var name = it.name || it.label || id;
+                    if (id) sel.append('<option value="' + id + '">' + name + ' (' + id + ')</option>');
+                  });
+                } catch (e) {}
+              }).fail(function () { /* 무시 */ });
+            } catch (e) {}
+          });
+        }
+
+        // 셀렉트 변경 시 UI 토글
+        sel.on("change", function () {
+          var v = $(this).val();
+          var isNew = (v === "__new__");
+          $("#fm-instance-id, #fm-instance-gen, #fm-register-btn").toggle(isNew);
+          $("#fm-register-next").toggle(!isNew);
+          if (!isNew && v && v !== "__token__") {
+            // 기존 UUID 선택 시 그 값을 instanceId로 세팅
+            self.instanceId(v); $("#fm-instance-id").val(v);
+          }
+        }).trigger("change");
+
+        $("#fm-register-next").on("click", function () {
+          // 기존 등록 선택 시 바로 3단계로 이동
+          var v = sel.val();
+          if (v && v !== "__new__") {
+            if (v !== "__token__") self.instanceId(v);
+            self.wizardStep(3); self.updateAuthBarrier();
+          }
+        });
         // 상태 패널 채우기: 서버 status에서 요약 읽기
         OctoPrint.ajax("GET", "plugin/factor_mqtt/status").done(function (r) {
           try {
