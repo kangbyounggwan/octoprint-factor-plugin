@@ -479,10 +479,16 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         /api/files?recursive=true 의 sdcard 트리와 최대한 동일하게 반환
         """
         # 전체 파일 목록 (API 응답과 동일한 형식)
-        all_files = []
-        all_files.extend(self._get_local_files_list())
-        all_files.extend(self._get_sd_files_list())
+        local_files = self._file_manager.list_files(FileDestinations.LOCAL)
         
+        # SD카드 파일 목록 (리스트 형태)
+        sd_files = self._printer.get_sd_files()
+
+        self._logger.info(f"[FACTOR MQTT] FileManager counts: LOCAL={len(local_files)} SDCARD={len(sd_files)}")
+        all_files = []
+        all_files.extend(local_files)
+        all_files.extend(sd_files)
+
         return all_files
 
 
