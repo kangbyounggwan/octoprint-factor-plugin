@@ -422,7 +422,8 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             return
         
         import json
-        topic = f"{topic_prefix}/status"
+        inst = self._settings.get(["instance_id"]) or "unknown"
+        topic = f"{topic_prefix}/status/{inst}"
         message = json.dumps(payload)
         self._publish_message(topic, message)
     
@@ -474,12 +475,53 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
     def _get_sd_tree(self):
         """/api/files?recursive=true 의 sdcard 트리와 동일한 캐시 데이터를 반환"""
         try:
+            # 1차: origin=sdcard 트리 그대로 시도
             try:
-                return self._file_manager.list_files("sdcard", recursive=True) or {}
+                raw = self._file_manager.list_files("sdcard", recursive=True) or {}
             except TypeError:
-                # 구버전 호환: 전체 트리에서 sdcard 분기만 반환
+                raw = None
+
+            # 2차: 구버전/빈값일 때 전체 트리에서 sdcard만 추출
+            if not raw:
                 all_tree = self._file_manager.list_files(recursive=True) or {}
-                return all_tree.get("sdcard") or {}
+                raw = all_tree.get("sdcard") or {}
+
+            # 3차: 여전히 비어 있으면 플랫 리스트 생성해서 API 형태로 반환
+            if not raw or (isinstance(raw, dict) and not raw):
+                files = []
+                try:
+                    all_tree = self._file_manager.list_files(recursive=True) or {}
+                    sd_root = all_tree.get("sdcard") or {}
+                    def collect(node):
+                        if isinstance(node, list):
+                            for it in node:
+                                collect(it)
+                            return
+                        if isinstance(node, dict):
+                            if "children" in node:
+                                collect(node.get("children"))
+                                return
+                            # 파일 후보 단순화
+                            name = node.get("name") or node.get("path")
+                            path = node.get("path") or name
+                            if name:
+                                files.append({
+                                    "name": name,
+                                    "path": path,
+                                    "origin": "sdcard",
+                                    "size": node.get("size"),
+                                    "type": node.get("type") or "file",
+                                })
+                            # 중첩 내부 탐색
+                            for v in node.values():
+                                if isinstance(v, (dict, list)):
+                                    collect(v)
+                    collect(sd_root)
+                except Exception:
+                    files = []
+                return {"files": files}
+
+            return raw
         except Exception as e:
             self._logger.debug(f"sd 트리 조회 실패: {e}")
             return {}
@@ -872,7 +914,8 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         # 스냅샷 만들어 퍼블리시 (이미 만들었던 함수 재사용)
         try:
             payload = self._make_snapshot()
-            topic = f"{self._settings.get(['topic_prefix']) or 'octoprint'}/status"
+            inst = self._settings.get(["instance_id"]) or "unknown"
+            topic = f"{self._settings.get(['topic_prefix']) or 'octoprint'}/status/{inst}"
             self._publish_message(topic, json.dumps(payload))
             self._gc_expired_jobs()
         except Exception as e:
