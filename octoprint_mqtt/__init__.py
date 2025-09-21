@@ -561,80 +561,6 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         except Exception as e:
             self._logger.error(f"메시지 발행 중 오류 발생: {e}")
     
-    def _flatten_local(local_tree, base_url: str, include_refs: bool):
-        out = []
-        def push(name, path, meta):
-            ftype = (meta.get("type") if isinstance(meta, dict) else None)
-            if not ftype:
-                ftype, type_path = _guess_type(name)
-            else:
-                _, type_path = _guess_type(name)
-            item = {
-                "name": name,
-                "path": path.replace("\\", "/"),
-                "origin": "local",
-                "size": (meta.get("size") if isinstance(meta, dict) else None),
-                "type": ftype,
-                "typePath": type_path,
-                "display": (meta.get("display") if isinstance(meta, dict) else name),
-            }
-            if include_refs:
-                item["refs"] = { "resource": f"{base_url}/api/files/local/{quote(item['path'])}" }
-            out.append(item)
-
-        def walk(node, prefix=""):
-            if isinstance(node, dict):
-                # FileManager는 보통 { "file.gco": {..}, "folder": {children: {...}} } 형태
-                for key, meta in node.items():
-                    if isinstance(meta, dict) and "children" in meta:
-                        walk(meta.get("children") or {}, os.path.join(prefix, key))
-                        continue
-                    name = (meta.get("name") if isinstance(meta, dict) else None) or key
-                    path = (meta.get("path") if isinstance(meta, dict) else None) or os.path.join(prefix, name)
-                    push(name, path, meta or {})
-            elif isinstance(node, list):
-                for it in node:
-                    walk(it, prefix)
-        walk(local_tree or {})
-        return out
-
-    def _flatten_sd(sd_list, base_url: str, include_refs: bool):
-        out = []
-        def push(name, path, meta):
-            ftype = meta.get("type")
-            type_path = meta.get("typePath")
-            if not ftype:
-                ftype, type_path = _guess_type(name)
-            item = {
-                "name": name,
-                "path": path or name,
-                "origin": "sdcard",
-                "size": meta.get("size"),
-                "type": ftype,
-                "typePath": type_path,
-                "display": meta.get("display") or f"/{name}",
-            }
-            if include_refs:
-                item["refs"] = { "resource": f"{base_url}/api/files/sdcard/{quote(name)}" }
-            out.append(item)
-
-        def walk(node, prefix=""):
-            if isinstance(node, list):
-                for it in node:
-                    walk(it, prefix)
-            elif isinstance(node, dict):
-                # 일부 펌웨어/버전에 따라 children을 가질 수 있으니 처리
-                if "children" in node:
-                    walk(node.get("children") or [], prefix)
-                    return
-                name = node.get("name") or node.get("path")
-                if not name:
-                    return
-                path = node.get("path") or name
-                push(name, path, node)
-        walk(sd_list or [])
-        return out
-
     def _get_sd_tree(self, force_refresh=False, timeout=0.0):
         """
         /api/files?recursive=true 의 sdcard 트리와 최대한 동일하게 반환
@@ -643,16 +569,15 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             # 전체 파일 목록 (API 응답과 동일한 형식)
             local_files = self._file_manager.list_files(FileDestinations.LOCAL)
             
+            
             # SD카드 파일 목록 (리스트 형태)
             sd_files = self._printer.get_sd_files()
 
+            all_files_payload = {}
+            all_files_payload["local"] = local_files
+            all_files_payload["sdcard"] = sd_files
 
-            local_files_tree = _flatten_local(local_files, base_url, include_refs)
-            sd_files_tree    = _flatten_sd(sd_files, base_url, include_refs)
-
-            files = local_files_tree + sd_files_tree
-
-            return files
+            return all_files_payload
 
         except Exception as e:
             self._logger.debug(f"sd 트리 조회 실패: {e}")
