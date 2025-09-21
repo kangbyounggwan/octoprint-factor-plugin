@@ -90,9 +90,10 @@ $(function () {
               try {
                 var list = (resp && resp.items) || resp || [];
                 list.forEach(function (it) {
-                  var id = it.uuid || it.instance_id || it.id;
-                  var name = it.name || it.label || id;
-                  if (id) sel.append('<option value="' + id + '">' + name + ' (' + id + ')</option>');
+                  var id = it.device_uuid || it.uuid || it.instance_id || it.id;
+                  var name = it.model || it.name || it.label || "Unknown";
+                  if (!id) return; // UUID 없으면 제외
+                  sel.append('<option value="' + id + '">' + name + ' (' + id + ')</option>');
                 });
               } catch (e) {}
             });
