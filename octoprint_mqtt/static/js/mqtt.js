@@ -80,8 +80,6 @@ $(function () {
         var sel = $("#fm-register-select");
         sel.empty();
         sel.append('<option value="__new__">신규 등록</option>');
-        if (token) sel.append('<option value="__token__">로그인 토큰 사용</option>');
-
         // 기존 등록된 UUID 조회(API)
         // 기존 UUID 목록은 서버 프록시로 안전하게 호출
         if (token) {
@@ -116,6 +114,10 @@ $(function () {
           var v = sel.val();
           if (v && v !== "__new__") {
             if (v !== "__token__") self.instanceId(v);
+            // 서버에 저장 요청
+            try {
+              OctoPrint.postJson("plugin/factor_mqtt/device", { device_uuid: self.instanceId() });
+            } catch (e) {}
             self.wizardStep(3); self.updateAuthBarrier();
           }
         });
@@ -154,6 +156,10 @@ $(function () {
             .done(function (data) {
               if (data && (data.success === true || data.raw || Object.keys(data).length)) {
                 $("#fm-register-status").text("등록 성공"); sessionStorage.setItem("factor_mqtt.instanceId", iid);
+                // 서버에 저장 요청
+                try {
+                  OctoPrint.postJson("plugin/factor_mqtt/device", { device_uuid: iid });
+                } catch (e) {}
                 self.wizardStep(3); self.updateAuthBarrier();
               } else {
                 $("#fm-register-status").text("등록 실패");

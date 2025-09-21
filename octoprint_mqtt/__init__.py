@@ -736,6 +736,20 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             "printer_summary": self._get_printer_summary(),
         }
 
+    @octoprint.plugin.BlueprintPlugin.route("/device", methods=["POST"])
+    def set_device_uuid(self):
+        try:
+            data = request.get_json(force=True, silent=True) or {}
+            dev = (data.get("device_uuid") or "").strip()
+            if not dev:
+                return make_response(jsonify({"success": False, "error": "missing device_uuid"}), 400)
+            self._settings.set(["instance_id"], dev)
+            self._settings.set(["registered"], True)
+            self._settings.save()
+            return make_response(jsonify({"success": True, "instance_id": dev}), 200)
+        except Exception as e:
+            return make_response(jsonify({"success": False, "error": str(e)}), 500)
+
     @octoprint.plugin.BlueprintPlugin.route("/test", methods=["POST"])
     def test_mqtt_connection(self):
         import time, json, threading
