@@ -392,6 +392,35 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         except Exception:
             pass
     
+    def _list_sd_files(self, max_items: int = 100):
+        files = []
+        try:
+            tree = self._file_manager.list_files(recursive=True) or {}
+            sd_root = (tree.get("sdcard") or {})
+
+            def walk(node, base_path=""):
+                if not isinstance(node, dict):
+                    return
+                for key, val in node.items():
+                    if isinstance(val, dict) and ("children" in val):
+                        name = val.get("name") or key or ""
+                        walk(val.get("children") or {}, base_path + (name + "/" if name else ""))
+                        continue
+                    if isinstance(val, dict):
+                        name = val.get("name") or key
+                        path = val.get("path") or (base_path + (name or ""))
+                        files.append({
+                            "name": name,
+                            "path": path,
+                            "size": val.get("size"),
+                            "date": val.get("date"),
+                        })
+
+            walk(sd_root)
+        except Exception as e:
+            self._logger.debug(f"SD 목록 추출 실패: {e}")
+        return files[:max_items]
+    
     def _check_mqtt_connection_status(self):
         """MQTT 연결 상태를 확인합니다."""
         if not self.mqtt_client:
@@ -471,7 +500,8 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         return {
             "connected": self.is_connected,
             "broker_host": self._settings.get(["broker_host"]),
-            "broker_port": self._settings.get(["broker_port"])
+            "broker_port": self._settings.get(["broker_port"]),
+            "sd_files": self._list_sd_files(max_items=100)
         }
 
     @octoprint.plugin.BlueprintPlugin.route("/test", methods=["POST"])

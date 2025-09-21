@@ -3,7 +3,7 @@ $(function () {
     function MqttViewModel(parameters) {
       var self = this;
     // [AUTH ADD] 설정: 실제 서버 주소로 교체하세요
-    var AUTH_URL = "{{URL}}/api/auth/login";
+    var AUTH_URL = "http://192.168.200.104:5173/api/auth/login";
 
     // [AUTH ADD] 상태 저장
     self.isAuthed = ko.observable(!!sessionStorage.getItem("factor_mqtt.auth"));
@@ -32,7 +32,7 @@ $(function () {
             '<div style="width:100%; max-width:380px; background:#fff; border:1px solid #ddd; border-radius:8px; padding:16px; box-shadow:0 2px 8px rgba(0,0,0,0.1);">' +
               '<div style="font-weight:bold; font-size:14px; margin-bottom:10px;">로그인 후 MQTT 설정을 사용할 수 있습니다</div>' +
               '<div style="display:flex; flex-direction:column; gap:8px;">' +
-                '<input type="text" id="fm-login-id" class="form-control" placeholder="ID">' +
+                '<input type="text" id="fm-login-id" class="form-control" placeholder="Email">' +
                 '<input type="password" id="fm-login-pw" class="form-control" placeholder="PW">' +
                 '<button id="fm-login-btn" class="btn btn-primary btn-sm">로그인</button>' +
                 '<div id="fm-login-status" style="color:#666; min-height:18px;"></div>' +
@@ -43,10 +43,10 @@ $(function () {
         root.prepend(overlay);
 
         $("#fm-login-btn").on("click", function () {
-          var id = ($("#fm-login-id").val() || "").trim();
+          var email = ($("#fm-login-id").val() || "").trim();
           var pw = $("#fm-login-pw").val() || "";
-          if (!id || !pw) {
-            $("#fm-login-status").text("ID와 PW를 입력하세요.");
+          if (!email || !pw) {
+            $("#fm-login-status").text("Email과 PW를 입력하세요.");
             return;
           }
           $("#fm-login-status").text("로그인 중...");
@@ -54,7 +54,7 @@ $(function () {
           fetch(AUTH_URL, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id: id, password: pw })
+            body: JSON.stringify({ email: email, password: pw })
           })
             .then(function (r) { return r.json(); })
             .then(function (data) {
