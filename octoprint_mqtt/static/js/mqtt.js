@@ -209,6 +209,18 @@ $(function () {
          self.publishSnapshot(!!self.pluginSettings.publish_snapshot());
          self.periodicInterval(parseFloat(self.pluginSettings.periodic_interval()) || 1.0);
   
+        // [WIZARD] 탭 클릭: 뒤로는 허용, 앞으로는 금지
+        $("#settings_plugin_factor_mqtt .nav-tabs a[data-step]").off("click").on("click", function (e) {
+          e.preventDefault();
+          var target = parseInt($(this).attr("data-step"), 10) || 1;
+          var cur = self.wizardStep();
+          if (target <= cur) {
+            self.wizardStep(target);
+            self.updateAuthBarrier();
+            if (target === 2) self.renderRegisterTab();
+          }
+        });
+
         // [WIZARD] 초기 단계 결정
         self.bindLoginTab();
         var authed = !!self.isAuthed();
