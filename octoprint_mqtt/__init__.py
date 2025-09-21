@@ -527,21 +527,41 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             data = request.get_json(force=True) or {}
             instance_id = (data.get("instance_id") or "").strip() or self._ensure_instance_id()
             user = data.get("user") or {}
+            access_token = (data.get("access_token") or data.get("accessToken") or "").strip()
             if not instance_id:
                 return make_response(jsonify({"success": False, "error": "missing instance_id"}), 400)
 
-            base = (self._settings.get(["register_api_base"]) or self._settings.get(["auth_api_base"]) or "http://127.0.0.1:5000").rstrip("/")
+            base = (self._settings.get(["register_api_base"]) or self._settings.get(["auth_api_base"])).rstrip("/")
             if not re.match(r"^https?://", base):
                 return make_response(jsonify({"success": False, "error": "invalid register_api_base"}), 500)
 
             url = f"{base}/api/printer/register"
             # 프린터 요약 정보(필요 시 확장)
+            client_info = {
+                "uuid": instance_id
+            }
             printer_info = {
                 "connection": self._printer.get_current_connection(),
                 "state": (self._printer.get_current_data() or {}).get("state"),
             }
-            payload = {"instance_id": instance_id, "printer_info": printer_info, "user": user}
-            resp = requests.post(url, json=payload, timeout=8)
+            camera_info = {
+                "uuid": None
+            }
+            software_info = {
+                "firmware_version": None,
+                "firmware": None,
+                "last_update": None,
+                "uuid": None
+            }
+            # 권장 포맷: 헤더 Authorization: Bearer <token>, 바디 { payload: {...}, user: { id } }
+            payload_obj = {"client": client_info, "printer": printer_info, "camera": camera_info, "software": software_info}
+            body = {"payload": payload_obj}
+            if isinstance(user, dict) and user.get("id"):
+                body["user"] = {"id": user.get("id")}
+            headers = {"Content-Type": "application/json"}
+            if access_token:
+                headers["Authorization"] = f"Bearer {access_token}"
+            resp = requests.post(url, json=body, headers=headers, timeout=8)
             ok = 200 <= resp.status_code < 300
             try:
                 out = resp.json()

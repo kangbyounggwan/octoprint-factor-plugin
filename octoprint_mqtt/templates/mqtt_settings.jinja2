@@ -1,5 +1,30 @@
 <!-- settings_plugin_factor_mqtt 의 컨텐츠만 넣어야 합니다. tab-pane 같은 래퍼 금지 -->
 <div id="settings_plugin_factor_mqtt" class="factor-mqtt">
+  <ul class="nav nav-tabs" style="margin-bottom:10px;">
+    <li data-bind="css: { active: wizardStep() === 1 }"><a href="#" onclick="return false;">1. 로그인</a></li>
+    <li data-bind="css: { active: wizardStep() === 2 }"><a href="#" onclick="return false;">2. 등록</a></li>
+    <li data-bind="css: { active: wizardStep() === 3 }"><a href="#" onclick="return false;">3. MQTT 설정</a></li>
+  </ul>
+
+  <div id="tab-login" data-bind="visible: wizardStep() === 1" style="margin-bottom:12px;">
+    <div class="form-inline" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+      <input type="text" id="fm-login-id" class="form-control" placeholder="Email" style="max-width:240px;">
+      <input type="password" id="fm-login-pw" class="form-control" placeholder="PW" style="max-width:240px;">
+      <button id="fm-login-btn" class="btn btn-primary btn-sm">로그인</button>
+      <span id="fm-login-status" class="text-muted"></span>
+    </div>
+  </div>
+
+  <div id="tab-register" data-bind="visible: wizardStep() === 2" style="margin-bottom:12px;">
+    <div class="form-inline" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+      <input type="text" id="fm-instance-id" class="form-control" placeholder="Instance ID (UUID)" style="min-width:260px;">
+      <button id="fm-instance-gen" class="btn btn-default btn-sm">생성</button>
+      <button id="fm-register-btn" class="btn btn-primary btn-sm">등록</button>
+      <span id="fm-register-status" class="text-muted"></span>
+    </div>
+  </div>
+
+  <div id="tab-mqtt" data-bind="visible: wizardStep() === 3">
   <div class="row">
     <div class="col-xs-12 col-md-6">
       <h4>MQTT 브로커 설정</h4>
@@ -83,4 +108,5 @@
   <button type="button" class="btn btn-primary" data-bind="click: testConnection">
     <span class="glyphicon glyphicon-refresh"></span> 연결 테스트
   </button>
+  </div>
 </div>

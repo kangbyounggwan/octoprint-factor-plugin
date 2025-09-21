@@ -22,73 +22,38 @@ $(function () {
       $("#settings_dialog .modal-footer .btn-primary").prop("disabled", !!disabled);
     }
 
-    // [AUTH ADD] 로그인 오버레이 렌더
-    self.renderLoginOverlay = function () {
-      var root = $("#settings_plugin_factor_mqtt");
-      if (!root.length) return;
-      if (!root.css("position") || root.css("position") === "static") {
-        root.css("position", "relative");
-      }
-      if (!$("#factor-mqtt-auth-overlay").length) {
-        var overlay = $(
-          '<div id="factor-mqtt-auth-overlay" style="position:absolute; inset:0; background:rgba(255,255,255,0.92); z-index:10; display:flex; align-items:center; justify-content:center;">' +
-            '<div style="width:100%; max-width:380px; background:#fff; border:1px solid #ddd; border-radius:8px; padding:16px; box-shadow:0 2px 8px rgba(0,0,0,0.1);">' +
-              '<div style="font-weight:bold; font-size:14px; margin-bottom:10px;">로그인 후 MQTT 설정을 사용할 수 있습니다</div>' +
-              '<div style="display:flex; flex-direction:column; gap:8px;">' +
-                '<input type="text" id="fm-login-id" class="form-control" placeholder="Email">' +
-                '<input type="password" id="fm-login-pw" class="form-control" placeholder="PW">' +
-                '<button id="fm-login-btn" class="btn btn-primary btn-sm">로그인</button>' +
-                '<div id="fm-login-status" style="color:#666; min-height:18px;"></div>' +
-              '</div>' +
-            '</div>' +
-          '</div>'
-        );
-        root.prepend(overlay);
-
-        $("#fm-login-btn").on("click", function () {
-          var email = ($("#fm-login-id").val() || "").trim();
-          var pw = $("#fm-login-pw").val() || "";
-          if (!email || !pw) {
-            $("#fm-login-status").text("Email과 PW를 입력하세요.");
-            return;
-          }
-          $("#fm-login-status").text("로그인 중...");
-
-          fetch(AUTH_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email: email, password: pw })
+    // [WIZARD] 로그인 탭 이벤트 바인딩
+    self.bindLoginTab = function () {
+      // 중복 바인딩 방지
+      if ($("#fm-login-btn").data("bound")) return;
+      $("#fm-login-btn").data("bound", true);
+      $("#fm-login-btn").on("click", function () {
+        var email = ($("#fm-login-id").val() || "").trim();
+        var pw = $("#fm-login-pw").val() || "";
+        if (!email || !pw) { $("#fm-login-status").text("Email과 PW를 입력하세요."); return; }
+        $("#fm-login-status").text("로그인 중...");
+        fetch(AUTH_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: email, password: pw }) })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            var ok = !!(data && (data.success === true || (!data.error && (data.user || data.session))));
+            if (ok) {
+              sessionStorage.setItem("factor_mqtt.auth", JSON.stringify(data));
+              self.authResp(data); self.isAuthed(true);
+              self.wizardStep(2);
+              self.renderRegisterTab();
+              self.updateAuthBarrier();
+            } else {
+              var msg = (data && data.error && data.error.message) ? data.error.message : "인증 실패";
+              $("#fm-login-status").text(msg); self.isAuthed(false);
+            }
           })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-              var ok = !!(data && (data.success === true || (!data.error && (data.user || data.session))));
-              if (ok) {
-                sessionStorage.setItem("factor_mqtt.auth", JSON.stringify(data));
-                self.authResp(data);
-                self.isAuthed(true);
-                // 로그인 완료 → 2단계로 전환
-                self.wizardStep(2);
-                self.renderRegisterOverlay();
-                self.updateAuthBarrier();
-              } else {
-                var msg = (data && data.error && data.error.message) ? data.error.message : "인증 실패";
-                $("#fm-login-status").text(msg);
-                self.isAuthed(false);
-              }
-            })
-            .catch(function (e) {
-              $("#fm-login-status").text("통신 오류: " + e);
-              self.isAuthed(false);
-            });
-        });
-      }
+          .catch(function (e) { $("#fm-login-status").text("통신 오류: " + e); self.isAuthed(false); });
+      });
     };
 
     // [AUTH ADD] 오버레이 토글 + 가드 적용
     self.updateAuthBarrier = function () {
       var authed = !!self.isAuthed();
-      // 로그인 오버레이는 미인증시에만 노출
-      $("#factor-mqtt-auth-overlay").toggle(!authed);
       // 3단계에서만 전체 활성화
       setInputsDisabled(!(authed && self.wizardStep() === 3));
       if (authed && self.wizardStep() === 3) {
@@ -102,60 +67,33 @@ $(function () {
       return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c){ var r=Math.random()*16|0, v=c==='x'?r:(r&0x3|0x8); return v.toString(16); });
     }
 
-    self.renderRegisterOverlay = function () {
+    self.renderRegisterTab = function () {
       var root = $("#settings_plugin_factor_mqtt");
       if (!root.length) return;
-      if (!root.css("position") || root.css("position") === "static") root.css("position", "relative");
-      if (!$("#factor-mqtt-register-overlay").length) {
-        var html =
-          '<div id="factor-mqtt-register-overlay" style="position:absolute; inset:0; background:rgba(255,255,255,0.92); z-index:9; display:flex; align-items:center; justify-content:center;">' +
-            '<div style="width:100%; max-width:420px; background:#fff; border:1px solid #ddd; border-radius:8px; padding:16px; box-shadow:0 2px 8px rgba(0,0,0,0.1);">' +
-              '<div style="font-weight:bold; font-size:14px; margin-bottom:10px;">2단계: 프린터 등록</div>' +
-              '<div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">' +
-                '<input type="text" id="fm-instance-id" class="form-control" placeholder="Instance ID (UUID)" style="flex:1; min-width:240px;">' +
-                '<button id="fm-instance-gen" class="btn btn-default btn-sm">생성</button>' +
-                '<button id="fm-register-btn" class="btn btn-primary btn-sm">등록</button>' +
-              '</div>' +
-              '<div id="fm-register-status" style="margin-top:8px; color:#666; min-height:18px;"></div>' +
-            '</div>' +
-          '</div>';
-        root.prepend($(html));
-
-        if (!self.instanceId()) self.instanceId(genUuid());
-        $("#fm-instance-id").val(self.instanceId());
-
+      // 바인딩(중복 방지)
+      if (!self.instanceId()) self.instanceId(genUuid());
+      $("#fm-instance-id").val(self.instanceId());
+      if (!$("#fm-register-btn").data("bound")) {
+        $("#fm-register-btn").data("bound", true);
         $("#fm-instance-gen").on("click", function () {
           var iid = genUuid(); self.instanceId(iid); $("#fm-instance-id").val(iid);
         });
-
         $("#fm-register-btn").on("click", function () {
           var iid = ($("#fm-instance-id").val() || "").trim();
           if (!iid) { $("#fm-register-status").text("Instance ID를 입력/생성하세요."); return; }
           $("#fm-register-status").text("등록 중...");
-
           var auth = self.authResp() || {}; var user = auth.user || null;
-          fetch("plugin/factor_mqtt/register", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ instance_id: iid, user: user })
-          })
+          fetch("plugin/factor_mqtt/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ instance_id: iid, user: user }) })
           .then(function (r) { return r.json().then(function (j){ return {ok:r.ok, status:r.status, data:j}; }); })
           .then(function (res) {
             if (res.ok || (res.data && res.data.success === true)) {
-              $("#fm-register-status").text("등록 성공");
-              sessionStorage.setItem("factor_mqtt.instanceId", iid);
-              self.wizardStep(3);
-              $("#factor-mqtt-register-overlay").remove();
-              self.updateAuthBarrier();
-            } else {
-              var msg = (res.data && (res.data.error || res.data.message)) || ("등록 실패 (" + res.status + ")");
-              $("#fm-register-status").text(msg);
-            }
+              $("#fm-register-status").text("등록 성공"); sessionStorage.setItem("factor_mqtt.instanceId", iid);
+              self.wizardStep(3); self.updateAuthBarrier();
+            } else { var msg = (res.data && (res.data.error || res.data.message)) || ("등록 실패 (" + res.status + ")"); $("#fm-register-status").text(msg); }
           })
           .catch(function (e) { $("#fm-register-status").text("통신 오류: " + e); });
         });
       }
-      $("#factor-mqtt-register-overlay").toggle(self.wizardStep() === 2);
     };
   
       self.settingsViewModel = parameters[0];
@@ -202,7 +140,7 @@ $(function () {
          self.periodicInterval(parseFloat(self.pluginSettings.periodic_interval()) || 1.0);
   
         // [WIZARD] 초기 단계 결정
-        self.renderLoginOverlay();
+        self.bindLoginTab();
         var authed = !!self.isAuthed();
         // 서버 상태에서 registered/instance_id 참고
         OctoPrint.ajax("GET", "plugin/factor_mqtt/status")
@@ -215,7 +153,7 @@ $(function () {
               self.updateAuthBarrier();
             } else if (!registered) {
               self.wizardStep(2);
-              self.renderRegisterOverlay();
+              self.renderRegisterTab();
               self.updateAuthBarrier();
             } else {
               self.wizardStep(3);
