@@ -569,7 +569,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         """
         try:
             # 방법 1: 리스트 형식으로 통일
-            all_files = []
+            all_files = {}
             
             # 로컬 파일 평면화
             local_files_dict = self._file_manager.list_files(FileDestinations.LOCAL, recursive=True)
@@ -593,8 +593,8 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
                         "date": f.get("date")
                     }
                     all_files.append(file_info)
-            all_files.append(local_files_dict)
-            all_files.append(sd_files)
+            all_files["local"] = local_files_dict
+            all_files["sdcard"] = sd_files
             return all_files
 
         except Exception as e:
