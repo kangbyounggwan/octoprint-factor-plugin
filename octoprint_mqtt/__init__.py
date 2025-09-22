@@ -9,6 +9,7 @@ from flask import jsonify, make_response
 import requests
 import re
 import uuid
+import tempfile
 import base64
 import io
 import time
@@ -222,7 +223,11 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
                 qos = int(self._settings.get(["qos_level"]) or 0)
                 topic = f"{topic_prefix}/{suffix}/#"
                 self.mqtt_client.subscribe(topic, qos=qos)
-                self._logger.info(f"[FACTOR MQTT] subscribe: {topic} (qos={qos})")
+                # instance_id suffix 채널(권장)도 함께 구독
+                inst = self._settings.get(["instance_id"]) or "unknown"
+                topic_inst = f"{topic_prefix}/{suffix}/{inst}"
+                self.mqtt_client.subscribe(topic_inst, qos=qos)
+                self._logger.info(f"[FACTOR MQTT] subscribe: {topic} | {topic_inst} (qos={qos})")
                 
                 # control/<instance_id> 제어 채널 구독 (prefix 없는 순수 토픽)
                 inst = self._settings.get(["instance_id"]) or "unknown"
@@ -286,7 +291,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             topic = msg.topic or ""
             topic_prefix = self._settings.get(["topic_prefix"]) or "octoprint"
             suffix = self._settings.get(["receive_topic_suffix"]) or "gcode_in"
-            if not topic.startswith(f"{topic_prefix}/{suffix}"):
+            if not (topic.startswith(f"{topic_prefix}/{suffix}") or topic.endswith(f"/{self._settings.get(['instance_id']) or 'unknown'}")):
                 # 제어 토픽 검사
                 inst = self._settings.get(["instance_id"]) or "unknown"
                 if topic not in (f"control/{inst}", f"{topic_prefix}/control/{inst}"):
@@ -306,106 +311,29 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             self._logger.exception(f"[FACTOR MQTT] on_message 처리 오류: {e}")
 
     def _handle_gcode_message(self, data: dict):
-        action = (data.get("action") or "").lower()
-        job_id = data.get("job_id")
-        now = time.time()
-        if not job_id:
-            self._logger.warning("[FACTOR MQTT] job_id 누락")
-            return
-
-        self._gc_expired_jobs(now)
-
-        if action == "start":
-            filename = data.get("filename") or f"{job_id}.gcode"
-            total = int(data.get("total_chunks") or 0)
-            if total <= 0:
-                self._logger.warning("[FACTOR MQTT] total_chunks 누락/잘못됨")
-                return
-            self._gcode_jobs[job_id] = {
-                "filename": filename,
-                "total": total,
-                "chunks": {},
-                "created_ts": now,
-                "last_ts": now
-            }
-            self._logger.info(f"[FACTOR MQTT] GCODE 수신 시작 job={job_id} file={filename} total={total}")
-            return
-
-        state = self._gcode_jobs.get(job_id)
-        if not state:
-            self._logger.warning(f"[FACTOR MQTT] 알 수 없는 job_id={job_id}, start 먼저 필요")
-            return
-
-        state["last_ts"] = now
-
-        if action == "chunk":
-            try:
-                seq = int(data.get("seq"))
-                b64 = data.get("data_b64") or ""
-                if seq < 0 or not b64:
-                    raise ValueError("seq/data_b64 invalid")
-                chunk = base64.b64decode(b64)
-                state["chunks"][seq] = chunk
-                if len(state["chunks"]) % 50 == 0 or len(state["chunks"]) == 1:
-                    self._logger.info(f"[FACTOR MQTT] chunk 수신 job={job_id} {len(state['chunks'])}/{state['total']}")
-            except Exception as e:
-                self._logger.warning(f"[FACTOR MQTT] chunk 처리 실패: {e}")
-            return
-
-        if action == "cancel":
-            self._gcode_jobs.pop(job_id, None)
-            self._logger.info(f"[FACTOR MQTT] GCODE 수신 취소 job={job_id}")
-            return
-
-        if action == "end":
-            total = state["total"]
-            got = len(state["chunks"])
-            if got != total:
-                self._logger.warning(f"[FACTOR MQTT] end 수신 but chunk 불일치 {got}/{total}, 조합 중단")
-                return
-
-            ordered = [state["chunks"][i] for i in range(total)]
-            content = b"".join(ordered)
-
-            expect_md5 = (data.get("md5") or "").lower()
-            if expect_md5:
-                calc_md5 = hashlib.md5(content).hexdigest()
-                if calc_md5 != expect_md5:
-                    self._logger.warning(f"[FACTOR MQTT] MD5 불일치 expect={expect_md5} got={calc_md5}")
-
-            filename = state["filename"]
-            target = (data.get("target") or "").lower()
-            if target not in ("sd", "local_print"):
-                target = (self._settings.get(["receive_target_default"]) or "local_print").lower()
-
-            try:
-                if target == "sd":
-                    self._finalize_job_to_sd(filename, content)
-                    self._logger.info(f"[FACTOR MQTT] SD 저장 완료 file={filename}")
-                else:
-                    self._finalize_job_to_local_and_print(filename, content)
-                    self._logger.info(f"[FACTOR MQTT] 로컬 저장+인쇄 시작 file={filename}")
-            except Exception as e:
-                self._logger.exception(f"[FACTOR MQTT] 최종 처리 실패: {e}")
-                return
-            finally:
-                self._gcode_jobs.pop(job_id, None)
-            return
-
-        self._logger.warning(f"[FACTOR MQTT] 지원되지 않는 action={action}")
+        # 위임: 모듈로 분리된 구현 사용
+        try:
+            from .mqtt_gcode import handle_gcode_message as _impl
+            _impl(self, data)
+        except Exception as e:
+            self._logger.exception(f"GCODE 핸들러 오류: {e}")
 
     def _handle_control_message(self, data: dict):
         t = (data.get("type") or "").lower()
+        try:
+            from .control import pause_print as _pause, resume_print as _resume, cancel_print as _cancel, home_axes as _home
+        except Exception:
+            _pause = _resume = _cancel = _home = None
         if t == "pause":
-            res = self.pause_print()
+            res = _pause(self) if _pause else {"error": "control module unavailable"}
             self._logger.info(f"[CONTROL] pause -> {res}")
             return
         if t == "resume":
-            res = self.resume_print()
+            res = _resume(self) if _resume else {"error": "control module unavailable"}
             self._logger.info(f"[CONTROL] resume -> {res}")
             return
         if t == "cancel":
-            res = self.cancel_print()
+            res = _cancel(self) if _cancel else {"error": "control module unavailable"}
             self._logger.info(f"[CONTROL] cancel -> {res}")
             return
         if t == "home":
@@ -418,60 +346,12 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             if "z" in s: axes.append("z")
             if not axes:
                 axes = ["x", "y", "z"]
-            res = self.home_axes(axes)
+            res = _home(self, axes) if _home else {"error": "control module unavailable"}
             self._logger.info(f"[CONTROL] home {axes} -> {res}")
             return
         self._logger.warning(f"[CONTROL] 알 수 없는 type={t}")
 
-    # --- Control helpers ---
-    def pause_print(self):
-        if not self._printer.is_printing():
-            return {"error": "현재 프린트 중이 아닙니다"}
-        try:
-            self._printer.pause_print(tags={"source:plugin"})
-            return {"success": True, "message": "프린트 일시정지"}
-        except Exception as e:
-            return {"error": f"일시정지 실패: {str(e)}"}
-
-    def resume_print(self):
-        if not self._printer.is_paused():
-            return {"error": "현재 일시정지 상태가 아닙니다"}
-        try:
-            self._printer.resume_print(tags={"source:plugin"})
-            return {"success": True, "message": "프린트 재개"}
-        except Exception as e:
-            return {"error": f"재개 실패: {str(e)}"}
-
-    def cancel_print(self):
-        if not (self._printer.is_printing() or self._printer.is_paused()):
-            return {"error": "현재 프린트 중이거나 일시정지 상태가 아닙니다"}
-        try:
-            self._printer.cancel_print(tags={"source:plugin"})
-            return {"success": True, "message": "프린트 취소"}
-        except Exception as e:
-            return {"error": f"취소 실패: {str(e)}"}
-
-    def home_axes(self, axes):
-        if not self._printer.is_operational():
-            return {"error": "프린터가 연결되지 않았습니다"}
-        try:
-            self._printer.home(axes, tags={"source:plugin"})
-            return {"success": True, "message": f"홈킹 시작: {axes}"}
-        except Exception as e:
-            return {"error": f"홈킹 실패: {str(e)}"}
-
-    def _finalize_job_to_sd(self, filename: str, content: bytes):
-        from octoprint.filemanager.destinations import FileDestinations
-        stream = io.BytesIO(content)
-        stream.seek(0)
-        self._file_manager.add_file(FileDestinations.SDCARD, filename, stream, allow_overwrite=True)
-
-    def _finalize_job_to_local_and_print(self, filename: str, content: bytes):
-        from octoprint.filemanager.destinations import FileDestinations
-        stream = io.BytesIO(content)
-        stream.seek(0)
-        self._file_manager.add_file(FileDestinations.LOCAL, filename, stream, allow_overwrite=True)
-        self._printer.select_file(filename, False, printAfterSelect=True)
+    # finalize 함수는 모듈 내로 이동
 
     def _gc_expired_jobs(self, now: float = None):
         try:
@@ -793,6 +673,121 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             return make_response(jsonify({"success": True, "instance_id": dev}), 200)
         except Exception as e:
             return make_response(jsonify({"success": False, "error": str(e)}), 500)
+
+    @octoprint.plugin.BlueprintPlugin.route("/upload/local", methods=["POST"])
+    def upload_to_local(self):
+        """로컬에 파일 업로드"""
+        try:
+            from octoprint.filemanager.util import DiskFileWrapper
+            from octoprint.filemanager.destinations import FileDestinations as FD
+        except Exception:
+            # 호환용: 일부 환경에서 경로 다를 수 있음
+            from octoprint.filemanager.util import DiskFileWrapper
+            from octoprint.filemanager import FileDestinations as FD
+
+        if 'file' not in request.files:
+            return make_response(jsonify({"error": "파일이 없습니다"}), 400)
+
+        file = request.files['file']
+        if file.filename == '':
+            return make_response(jsonify({"error": "파일명이 없습니다"}), 400)
+
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.gcode') as tmp_file:
+                file.save(tmp_file.name)
+                tmp_path = tmp_file.name
+
+            file_object = DiskFileWrapper(file.filename, tmp_path)
+            username = None
+            try:
+                user = getattr(self, "_user_manager", None)
+                if user:
+                    cu = user.get_current_user()
+                    if cu:
+                        username = cu.get_name()
+            except Exception:
+                pass
+
+            saved_path = self._file_manager.add_file(
+                FD.LOCAL,
+                file.filename,
+                file_object,
+                allow_overwrite=True,
+                user=username
+            )
+
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
+
+            return make_response(jsonify({
+                "success": True,
+                "path": saved_path,
+                "message": f"파일이 로컬에 저장되었습니다: {saved_path}"
+            }), 200)
+
+        except Exception as e:
+            try:
+                if 'tmp_path' in locals() and os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+            except Exception:
+                pass
+            return make_response(jsonify({"error": f"업로드 실패: {str(e)}"}), 500)
+
+    @octoprint.plugin.BlueprintPlugin.route("/upload/sd", methods=["POST"])
+    def upload_to_sd(self):
+        """로컬 파일을 SD카드로 전송"""
+        try:
+            from octoprint.filemanager.destinations import FileDestinations as FD
+        except Exception:
+            from octoprint.filemanager import FileDestinations as FD
+
+        data = request.get_json(force=True, silent=True) or {}
+        local_filename = data.get('filename')
+
+        if not local_filename:
+            return make_response(jsonify({"error": "파일명이 필요합니다"}), 400)
+
+        try:
+            if not getattr(self._printer, "is_sd_ready", lambda: False)():
+                return make_response(jsonify({"error": "SD카드가 준비되지 않았습니다"}), 409)
+
+            if self._printer.is_printing():
+                return make_response(jsonify({"error": "프린트 중에는 SD카드 업로드가 불가능합니다"}), 409)
+
+            local_path = self._file_manager.path_on_disk(FD.LOCAL, local_filename)
+            if not os.path.exists(local_path):
+                return make_response(jsonify({"error": f"로컬 파일을 찾을 수 없습니다: {local_filename}"}), 404)
+
+            def on_success(remote_filename):
+                try:
+                    self._logger.info(f"SD카드 업로드 성공: {remote_filename}")
+                except Exception:
+                    pass
+
+            def on_failure(remote_filename):
+                try:
+                    self._logger.error(f"SD카드 업로드 실패: {remote_filename}")
+                except Exception:
+                    pass
+
+            remote_filename = self._printer.add_sd_file(
+                local_filename,
+                local_path,
+                on_success=on_success,
+                on_failure=on_failure,
+                tags={"source:plugin"}
+            )
+
+            return make_response(jsonify({
+                "success": True,
+                "remote_filename": remote_filename,
+                "message": f"파일이 SD카드에 업로드되었습니다: {remote_filename}"
+            }), 200)
+
+        except Exception as e:
+            return make_response(jsonify({"error": f"SD카드 업로드 실패: {str(e)}"}), 500)
 
     @octoprint.plugin.BlueprintPlugin.route("/test", methods=["POST"])
     def test_mqtt_connection(self):
