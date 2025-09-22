@@ -193,10 +193,15 @@ def _upload_bytes_to_sd(self, content: bytes, filename: str):
                 user=username
             )
 
-            def on_success(remote_filename):
+            def on_success(local, remote, elapsed=None, *args, **kwargs):
                 try:
-                    self._logger.info(f"SD카드 업로드 성공: {remote_filename}")
+                    self._logger.info(f"SD카드 업로드 성공:remote={remote}, local={local}")
                     # 임시 로컬 파일 삭제
+
+                    try:
+                        self._printer.refresh_sd_files()
+                    except Exception:
+                        pass
                     try:
                         self._file_manager.remove_file(FileDestinations.LOCAL, temp_filename)
                     except:
@@ -204,9 +209,9 @@ def _upload_bytes_to_sd(self, content: bytes, filename: str):
                 except Exception:
                     pass
 
-            def on_failure(remote_filename):
+            def on_failure(local, remote, elapsed=None, *args, **kwargs):
                 try:
-                    self._logger.error(f"SD카드 업로드 실패: {remote_filename}")
+                    self._logger.error(f"SD카드 업로드 실패: remote={remote}, local={local}")
                     # 임시 로컬 파일 삭제
                     try:
                         self._file_manager.remove_file(FileDestinations.LOCAL, temp_filename)
@@ -216,7 +221,7 @@ def _upload_bytes_to_sd(self, content: bytes, filename: str):
                     pass
 
             remote_filename = self._printer.add_sd_file(
-                temp_filename,
+                filename,
                 self._file_manager.path_on_disk(FileDestinations.LOCAL, temp_filename),
                 on_success=on_success,
                 on_failure=on_failure,
