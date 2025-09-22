@@ -84,7 +84,7 @@ def handle_gcode_message(self, data: dict):
         self._gcode_jobs.pop(job_id, None)
         
         # 업로드 처리 (당신의 로직 재사용)
-        upload_result = self._upload_gcode_content(content, filename, target)
+        upload_result = _upload_gcode_content(self, content, filename, target)
         
         if upload_result.get("success"):
             self._logger.info(f"[FACTOR MQTT] 업로드 성공 job={job_id} file={filename} target={target}")
@@ -96,9 +96,9 @@ def _upload_gcode_content(self, content: bytes, filename: str, target: str):
     """청크 데이터를 target에 따라 업로드"""
     try:
         if target == "sd":
-            return self._upload_bytes_to_sd(content, filename)
+            return _upload_bytes_to_sd(self, content, filename)
         elif target in ("local", "local_print"):
-            res = self._upload_bytes_to_local(content, filename)
+            res = _upload_bytes_to_local(self, content, filename)
             # local_print 는 저장 후 즉시 인쇄
             if target == "local_print" and res.get("success"):
                 try:
