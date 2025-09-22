@@ -674,6 +674,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         except Exception as e:
             return make_response(jsonify({"success": False, "error": str(e)}), 500)
 
+    # ===== Blueprint API 엔드포인트 (당신의 코드) =====
     @octoprint.plugin.BlueprintPlugin.route("/upload/local", methods=["POST"])
     def upload_to_local(self):
         """로컬에 파일 업로드"""
@@ -681,7 +682,6 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             from octoprint.filemanager.util import DiskFileWrapper
             from octoprint.filemanager.destinations import FileDestinations as FD
         except Exception:
-            # 호환용: 일부 환경에서 경로 다를 수 있음
             from octoprint.filemanager.util import DiskFileWrapper
             from octoprint.filemanager import FileDestinations as FD
 
