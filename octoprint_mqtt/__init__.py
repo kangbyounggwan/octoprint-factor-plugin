@@ -218,26 +218,15 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             self._logger.info("MQTT 브로커 연결 OK")
             self._start_snapshot_timer()     # ✅ 여기서 시작
             try:
-                topic_prefix = self._settings.get(["topic_prefix"]) or "octoprint"
-                suffix = self._settings.get(["receive_topic_suffix"]) or "gcode_in"
-                qos = int(self._settings.get(["qos_level"]) or 0)
-                topic = f"{topic_prefix}/{suffix}/#"
-                self.mqtt_client.subscribe(topic, qos=qos)
-                # instance_id suffix 채널(권장)도 함께 구독
+                qos = int(self._settings.get(["qos_level"]) or 1)
                 inst = self._settings.get(["instance_id"]) or "unknown"
-                topic_inst = f"{topic_prefix}/{suffix}/{inst}"
-                self.mqtt_client.subscribe(topic_inst, qos=qos)
-                self._logger.info(f"[FACTOR MQTT] subscribe: {topic} | {topic_inst} (qos={qos})")
-                
-                # control/<instance_id> 제어 채널 구독 (prefix 없는 순수 토픽)
-                inst = self._settings.get(["instance_id"]) or "unknown"
-                control_topic = f"control/{inst}"
 
+                # 고정 토픽만 구독
+                control_topic = f"control/{inst}"
+                gcode_topic = f"octoprint/gcode_in/{inst}"
                 self.mqtt_client.subscribe(control_topic, qos=qos)
-                # prefix 버전도 함께 구독 (호환)
-                control_topic2 = f"{topic_prefix}/control/{inst}"
-                self.mqtt_client.subscribe(control_topic2, qos=qos)
-                self._logger.info(f"[FACTOR MQTT] subscribe: {control_topic} | {control_topic2}")
+                self.mqtt_client.subscribe(gcode_topic, qos=qos)
+                self._logger.info(f"[FACTOR MQTT] subscribe: {control_topic} | {gcode_topic} (qos={qos})")
             except Exception as e:
                 self._logger.warning(f"[FACTOR MQTT] subscribe 실패: {e}")
         else:
@@ -286,17 +275,11 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
     
     def _on_mqtt_message(self, client, userdata, msg):
         try:
-            if not bool(self._settings.get(["receive_gcode_enabled"])):
-                pass
             topic = msg.topic or ""
-            topic_prefix = self._settings.get(["topic_prefix"]) or "octoprint"
-            suffix = self._settings.get(["receive_topic_suffix"]) or "gcode_in"
-            if not (topic.startswith(f"{topic_prefix}/{suffix}") or topic.endswith(f"/{self._settings.get(['instance_id']) or 'unknown'}")):
-                # 제어 토픽 검사
-                inst = self._settings.get(["instance_id"]) or "unknown"
-                if topic not in (f"control/{inst}", f"{topic_prefix}/control/{inst}"):
-                    return
-                # control payload 처리
+            inst = self._settings.get(["instance_id"]) or "unknown"
+
+            # 1) Control: control/<instance_id>
+            if topic == f"control/{inst}":
                 payload = msg.payload.decode("utf-8", errors="ignore") if isinstance(msg.payload, (bytes, bytearray)) else str(msg.payload or "")
                 try:
                     data = json.loads(payload or "{}")
@@ -304,9 +287,18 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
                     data = {}
                 self._handle_control_message(data)
                 return
-            payload = msg.payload.decode("utf-8", errors="ignore") if isinstance(msg.payload, (bytes, bytearray)) else str(msg.payload or "")
-            data = json.loads(payload or "{}")
-            self._handle_gcode_message(data)
+
+            # 2) G-code in: octoprint/gcode_in/<instance_id>
+            if topic == f"octoprint/gcode_in/{inst}":
+                if not bool(self._settings.get(["receive_gcode_enabled"])):
+                    return
+                payload = msg.payload.decode("utf-8", errors="ignore") if isinstance(msg.payload, (bytes, bytearray)) else str(msg.payload or "")
+                data = json.loads(payload or "{}")
+                self._handle_gcode_message(data)
+                return
+
+            # 3) 기타 토픽은 무시
+            return
         except Exception as e:
             self._logger.exception(f"[FACTOR MQTT] on_message 처리 오류: {e}")
 
@@ -321,9 +313,9 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
     def _handle_control_message(self, data: dict):
         t = (data.get("type") or "").lower()
         try:
-            from .control import pause_print as _pause, resume_print as _resume, cancel_print as _cancel, home_axes as _home
+            from .control import pause_print as _pause, resume_print as _resume, cancel_print as _cancel, home_axes as _home, move_axes as _move, set_temperature as _set_temp
         except Exception:
-            _pause = _resume = _cancel = _home = None
+            _pause = _resume = _cancel = _home = _move = _set_temp = None
         if t == "pause":
             res = _pause(self) if _pause else {"error": "control module unavailable"}
             self._logger.info(f"[CONTROL] pause -> {res}")
@@ -348,6 +340,20 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
                 axes = ["x", "y", "z"]
             res = _home(self, axes) if _home else {"error": "control module unavailable"}
             self._logger.info(f"[CONTROL] home {axes} -> {res}")
+            return
+        if t == "move":
+            mode = (data.get("mode") or "relative").lower()
+            x = data.get("x"); y = data.get("y"); z = data.get("z"); e = data.get("e")
+            feedrate = data.get("feedrate") or 1000
+            res = _move(self, mode, x, y, z, e, feedrate) if _move else {"error": "control module unavailable"}
+            self._logger.info(f"[CONTROL] move mode={mode} x={x} y={y} z={z} e={e} F={feedrate} -> {res}")
+            return
+        if t == "set_temperature":
+            tool = int(data.get("tool", 0))
+            temperature = float(data.get("temperature", 0))
+            wait = bool(data.get("wait", False))
+            res = _set_temp(self, tool, temperature, wait) if _set_temp else {"error": "control module unavailable"}
+            self._logger.info(f"[CONTROL] set_temperature tool={tool} temp={temperature} wait={wait} -> {res}")
             return
         self._logger.warning(f"[CONTROL] 알 수 없는 type={t}")
 

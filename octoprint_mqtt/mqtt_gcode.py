@@ -16,6 +16,28 @@ def handle_gcode_message(self, data: dict):
         self._logger.warning("[FACTOR MQTT] job_id 누락")
         return
 
+    # 업로드된 파일 즉시 프린트 (업로드 화이트리스트 기반)
+    if action == "print":
+        try:
+            name = (data.get("filename") or "").strip()
+            origin = (data.get("origin") or "local").lower()  # local | sd | sdcard
+            if not name:
+                self._logger.warning("[FACTOR MQTT] print filename 누락")
+                return
+            is_sd = origin in ("sd", "sdcard", "sd_card")
+            if is_sd:
+                wl = getattr(self, "_uploaded_sd_files", set())
+            else:
+                wl = getattr(self, "_uploaded_local_files", set())
+            if wl and name not in wl:
+                self._logger.warning(f"[FACTOR MQTT] 허용되지 않은 파일 print 요청: {name}")
+                return
+            self._printer.select_file(name, sd=is_sd, printAfterSelect=True)
+            self._logger.info(f"[FACTOR MQTT] print 시작: origin={'sd' if is_sd else 'local'} name={name}")
+        except Exception as e:
+            self._logger.error(f"[FACTOR MQTT] print 실패: {e}")
+        return
+
     if action == "start":
         # 시작 로직
         filename = data.get("filename") or f"{job_id}.gcode"
@@ -143,6 +165,13 @@ def _upload_bytes_to_local(self, content: bytes, filename: str):
         except Exception:
             pass
 
+        try:
+            if not hasattr(self, "_uploaded_local_files"):
+                self._uploaded_local_files = set()
+            self._uploaded_local_files.add(filename)
+        except Exception:
+            pass
+
         return {
             "success": True,
             "path": saved_path,
@@ -227,6 +256,14 @@ def _upload_bytes_to_sd(self, content: bytes, filename: str):
                 on_failure=on_failure,
                 tags={"source:plugin", "mqtt:upload"}
             )
+
+            try:
+                if not hasattr(self, "_uploaded_sd_files"):
+                    self._uploaded_sd_files = set()
+                # SD는 원격 파일명(프린터가 가진 경로/이름)이 기준일 수 있음. 우선 요청 filename으로 관리
+                self._uploaded_sd_files.add(filename)
+            except Exception:
+                pass
 
             return {
                 "success": True,
