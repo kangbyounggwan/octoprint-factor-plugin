@@ -63,14 +63,6 @@ $(function () {
 
     // [WIZARD] 2단계: 등록 오버레이
     function genUuid() {
-    // [AUTH ADD] 설정창 열 때마다 로그인 강제 게이트
-    function forceLoginGate() {
-      try { sessionStorage.removeItem("factor_mqtt.auth"); } catch (e) {}
-      self.isAuthed(false);
-      self.authResp(null);
-      self.wizardStep(1);
-      setInputsDisabled(true);
-    }
       if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
       return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c){ var r=Math.random()*16|0, v=c==='x'?r:(r&0x3|0x8); return v.toString(16); });
     }
@@ -203,9 +195,19 @@ $(function () {
   
       self.connectionStatus = ko.observable("연결 확인 중...");
       self.isConnected = ko.observable(false);
+
+      // 로그인/마법사 초기화 유틸 (모달 열릴 때마다 1. 로그인으로 강제)
+      function resetWizardToLogin() {
+        try { sessionStorage.removeItem("factor_mqtt.auth"); } catch (e) {}
+        self.isAuthed(false);
+        self.authResp(null);
+        self.wizardStep(1);
+        self.updateAuthBarrier();
+        self.bindLoginTab();
+      }
       self.onBeforeBinding = function () {
-        // 설정 모달 열릴 때마다 로그인부터 시작
-        forceLoginGate();
+        // 모달 재오픈 시 항상 1. 로그인 탭으로 이동
+        resetWizardToLogin();
         var s = self.settingsViewModel && self.settingsViewModel.settings;
         if (!s || !s.plugins || !s.plugins.factor_mqtt) {   // ✅ 여기
           console.warn("factor_mqtt settings not ready");
@@ -248,7 +250,7 @@ $(function () {
           }
         });
 
-        // [WIZARD] 초기 단계 결정
+        // [WIZARD] 초기 단계 결정 (강제 로그인 탭 유지)
         self.bindLoginTab();
         var authed = !!self.isAuthed();
         // 서버 상태에서 registered/instance_id 참고
@@ -283,6 +285,15 @@ $(function () {
             self.updateAuthBarrier();
             self.checkConnectionStatus();
           });
+
+        // settings 모달이 열릴 때마다 로그인 탭으로 리셋
+        try {
+          $(document).off("shown shown.bs.modal", "#settings_dialog").on("shown shown.bs.modal", "#settings_dialog", function(){
+            if ($("#settings_plugin_factor_mqtt").is(":visible")) {
+              resetWizardToLogin();
+            }
+          });
+        } catch (e) {}
       };
 
       // --- 카메라 UI 바인딩 (등록 탭) ---
