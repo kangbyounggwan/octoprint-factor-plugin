@@ -318,6 +318,14 @@ $(function () {
                     if (typeof cam.stream_url === "function") cam.stream_url(url); else cam.stream_url = url;
                   }
                 } catch (e) {}
+                // 서버 등록 API에 반영 (토큰/instance_id 자동 전송)
+                try {
+                  var auth = self.authResp() || {}; var token = auth.access_token || auth.accessToken;
+                  var iid = self.instanceId() || (self.pluginSettings && self.pluginSettings.instance_id && self.pluginSettings.instance_id());
+                  var body = { instance_id: iid };
+                  if (token) body.access_token = token;
+                  OctoPrint.postJson("plugin/factor_mqtt/register", body);
+                } catch (e) {}
               })
               .fail(function(xhr){
                 var msg = (xhr && xhr.responseJSON && (xhr.responseJSON.error || xhr.responseJSON.message)) || ("HTTP " + (xhr && xhr.status));
