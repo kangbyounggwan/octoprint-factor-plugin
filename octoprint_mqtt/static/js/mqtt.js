@@ -63,6 +63,14 @@ $(function () {
 
     // [WIZARD] 2단계: 등록 오버레이
     function genUuid() {
+    // [AUTH ADD] 설정창 열 때마다 로그인 강제 게이트
+    function forceLoginGate() {
+      try { sessionStorage.removeItem("factor_mqtt.auth"); } catch (e) {}
+      self.isAuthed(false);
+      self.authResp(null);
+      self.wizardStep(1);
+      setInputsDisabled(true);
+    }
       if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
       return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c){ var r=Math.random()*16|0, v=c==='x'?r:(r&0x3|0x8); return v.toString(16); });
     }
@@ -196,6 +204,8 @@ $(function () {
       self.connectionStatus = ko.observable("연결 확인 중...");
       self.isConnected = ko.observable(false);
       self.onBeforeBinding = function () {
+        // 설정 모달 열릴 때마다 로그인부터 시작
+        forceLoginGate();
         var s = self.settingsViewModel && self.settingsViewModel.settings;
         if (!s || !s.plugins || !s.plugins.factor_mqtt) {   // ✅ 여기
           console.warn("factor_mqtt settings not ready");
