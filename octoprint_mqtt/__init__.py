@@ -767,9 +767,13 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             printer_info = {
                 "connection": self._printer.get_current_connection(),
                 "state": (self._printer.get_current_data() or {}).get("state"),
+                "registration": {
+                    "is_new": not bool(self._settings.get(["registered"]) or False)
+                }
             }
             camera_info = {
-                "uuid": None
+                "uuid": None,
+                "stream_url": self._settings.get(["camera", "stream_url"]) or None
             }
             software_info = {
                 "firmware_version": None,
