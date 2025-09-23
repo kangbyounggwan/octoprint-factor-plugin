@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import json
+import subprocess, shlex, os, signal
 from flask import request  # Blueprint에서 사용
 import octoprint.plugin
 from octoprint.filemanager import FileDestinations
@@ -54,6 +55,10 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         self.is_connected = False
         self._snapshot_timer = None
         self._gcode_jobs = {}
+        # camera process state
+        self._camera_proc = None
+        self._camera_started_at = None
+        self._camera_last_error = None
     
     ##~~ SettingsPlugin mixin
     
@@ -79,7 +84,10 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             receive_gcode_enabled=True,
             receive_topic_suffix="gcode_in",
             receive_target_default="local_print",
-            receive_timeout_sec=300
+            receive_timeout_sec=300,
+            camera=dict(
+                stream_url=""
+            )
             
         )
     
@@ -224,9 +232,11 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
                 # 고정 토픽만 구독
                 control_topic = f"control/{inst}"
                 gcode_topic = f"octoprint/gcode_in/{inst}"
+                camera_cmd = f"camera/{inst}/cmd"
                 self.mqtt_client.subscribe(control_topic, qos=qos)
                 self.mqtt_client.subscribe(gcode_topic, qos=qos)
-                self._logger.info(f"[FACTOR MQTT] subscribe: {control_topic} | {gcode_topic} (qos={qos})")
+                self.mqtt_client.subscribe(camera_cmd, qos=qos)
+                self._logger.info(f"[FACTOR MQTT] subscribe: {control_topic} | {gcode_topic} | {camera_cmd} (qos={qos})")
             except Exception as e:
                 self._logger.warning(f"[FACTOR MQTT] subscribe 실패: {e}")
         else:
@@ -297,7 +307,22 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
                 self._handle_gcode_message(data)
                 return
 
-            # 3) 기타 토픽은 무시
+            # 3) Camera control: camera/<instance_id>/cmd
+            if topic == f"camera/{inst}/cmd":
+                payload = msg.payload.decode("utf-8", errors="ignore") if isinstance(msg.payload, (bytes, bytearray)) else str(msg.payload or "")
+                try:
+                    data = json.loads(payload or "{}")
+                except Exception:
+                    data = {}
+                # camera 명령은 control 핸들러로 위임 (type=camera)
+                if isinstance(data, dict):
+                    data = {"type": "camera", **data}
+                else:
+                    data = {"type": "camera"}
+                self._handle_control_message(data)
+                return
+
+            # 기타 토픽은 무시
             return
         except Exception as e:
             self._logger.exception(f"[FACTOR MQTT] on_message 처리 오류: {e}")
@@ -316,6 +341,30 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             from .control import pause_print as _pause, resume_print as _resume, cancel_print as _cancel, home_axes as _home, move_axes as _move, set_temperature as _set_temp
         except Exception:
             _pause = _resume = _cancel = _home = _move = _set_temp = None
+        # ---- camera control via MQTT ----
+        if t == "camera":
+            action = (data.get("action") or "").lower()
+            opts = data.get("options") or {}
+            if action == "start":
+                res = self._camera_start(opts)
+                self._publish_camera_state()
+                self._logger.info(f"[CONTROL] camera start -> {res}")
+                return
+            if action == "stop":
+                res = self._camera_stop(opts)
+                self._publish_camera_state()
+                self._logger.info(f"[CONTROL] camera stop -> {res}")
+                return
+            if action == "restart":
+                self._camera_stop(opts)
+                time.sleep(0.4)
+                res = self._camera_start(opts)
+                self._publish_camera_state()
+                self._logger.info(f"[CONTROL] camera restart -> {res}")
+                return
+            if action == "state":
+                self._publish_camera_state()
+                return
         if t == "pause":
             res = _pause(self) if _pause else {"error": "control module unavailable"}
             self._logger.info(f"[CONTROL] pause -> {res}")
@@ -446,6 +495,107 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
                 
         except Exception as e:
             self._logger.error(f"메시지 발행 중 오류 발생: {e}")
+    
+    # ---- Camera helpers ----
+    def _build_ffmpeg_cmd(self, opts: dict):
+        device = opts.get("device", "/dev/video0")
+        width  = int(opts.get("width", 1280))
+        height = int(opts.get("height", 720))
+        fps    = int(opts.get("fps", 30))
+        bitrate_k = int(opts.get("bitrateKbps", 2000))
+        upstream = (opts.get("upstream") or "").strip()
+        if not upstream:
+            raise ValueError("missing upstream url")
+        mux = ("flv" if upstream.startswith("rtmp://") else "mpegts")
+        cmd = [
+            "ffmpeg",
+            "-f", "v4l2",
+            "-framerate", str(fps),
+            "-video_size", f"{width}x{height}",
+            "-i", device,
+            "-vcodec", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
+            "-profile:v", "baseline", "-pix_fmt", "yuv420p",
+            "-b:v", f"{bitrate_k}k", "-maxrate", f"{int(bitrate_k*11/10)}k", "-bufsize", f"{bitrate_k}k",
+            "-f", mux,
+            upstream
+        ]
+        return cmd
+
+    def _camera_status(self):
+        running = bool(self._camera_proc and (self._camera_proc.poll() is None))
+        pid = (self._camera_proc.pid if running and self._camera_proc else None)
+        return {"running": running, "pid": pid, "started_at": self._camera_started_at, "last_error": self._camera_last_error}
+
+    def _start_ffmpeg_subprocess(self, opts: dict):
+        if self._camera_proc and self._camera_proc.poll() is None:
+            return {"success": True, "already_running": True, **self._camera_status()}
+        try:
+            cmd = self._build_ffmpeg_cmd(opts)
+            self._camera_proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.STDOUT,
+                preexec_fn=os.setsid
+            )
+            self._camera_started_at = time.time()
+            self._camera_last_error = None
+            self._logger.info("[CAMERA] ffmpeg started pid=%s cmd=%s", self._camera_proc.pid, " ".join(shlex.quote(c) for c in cmd))
+            return {"success": True, **self._camera_status()}
+        except Exception as e:
+            self._camera_last_error = str(e)
+            self._logger.exception("[CAMERA] start failed")
+            return {"success": False, "error": str(e), **self._camera_status()}
+
+    def _stop_ffmpeg_subprocess(self, timeout_sec: float = 5.0):
+        try:
+            if not (self._camera_proc and self._camera_proc.poll() is None):
+                return {"success": True, "already_stopped": True, **self._camera_status()}
+            pgid = os.getpgid(self._camera_proc.pid)
+            os.killpg(pgid, signal.SIGTERM)
+            t0 = time.time()
+            while (time.time() - t0) < timeout_sec:
+                if self._camera_proc.poll() is not None:
+                    break
+                time.sleep(0.1)
+            if self._camera_proc.poll() is None:
+                os.killpg(pgid, signal.SIGKILL)
+            self._logger.info("[CAMERA] ffmpeg stopped")
+            return {"success": True, **self._camera_status()}
+        except Exception as e:
+            self._camera_last_error = str(e)
+            self._logger.exception("[CAMERA] stop failed")
+            return {"success": False, "error": str(e), **self._camera_status()}
+
+    def _systemctl(self, unit: str, action: str):
+        try:
+            r = subprocess.run(["systemctl", action, unit], capture_output=True, text=True, timeout=8)
+            ok = (r.returncode == 0)
+            if not ok:
+                self._logger.warning("[CAMERA] systemctl %s %s rc=%s out=%s err=%s", action, unit, r.returncode, r.stdout, r.stderr)
+            return {"success": ok, "stdout": r.stdout, "stderr": r.stderr, "rc": r.returncode}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _camera_start(self, opts: dict):
+        unit = (opts.get("systemd_unit") or "").strip()
+        if unit:
+            return self._systemctl(unit, "start")
+        return self._start_ffmpeg_subprocess(opts)
+
+    def _camera_stop(self, opts: dict):
+        unit = (opts.get("systemd_unit") or "").strip()
+        if unit:
+            return self._systemctl(unit, "stop")
+        return self._stop_ffmpeg_subprocess()
+
+    def _publish_camera_state(self):
+        try:
+            inst = self._settings.get(["instance_id"]) or "unknown"
+            topic = f"camera/{inst}/state"
+            payload = json.dumps(self._camera_status())
+            self._publish_message(topic, payload)
+        except Exception as e:
+            self._logger.debug(f"publish camera state error: {e}")
     
 
 
@@ -677,6 +827,26 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             self._settings.set(["registered"], True)
             self._settings.save()
             return make_response(jsonify({"success": True, "instance_id": dev}), 200)
+        except Exception as e:
+            return make_response(jsonify({"success": False, "error": str(e)}), 500)
+
+    @octoprint.plugin.BlueprintPlugin.route("/camera", methods=["GET"])
+    def get_camera_config(self):
+        try:
+            url = self._settings.get(["camera", "stream_url"]) or ""
+            return make_response(jsonify({"success": True, "stream_url": url}), 200)
+        except Exception as e:
+            return make_response(jsonify({"success": False, "error": str(e)}), 500)
+
+    @octoprint.plugin.BlueprintPlugin.route("/camera", methods=["POST"])
+    def set_camera_config(self):
+        try:
+            data = request.get_json(force=True, silent=True) or {}
+            url = (data.get("stream_url") or "").strip()
+            # 빈 값도 허용(초기화)
+            self._settings.set(["camera", "stream_url"], url)
+            self._settings.save()
+            return make_response(jsonify({"success": True, "stream_url": url}), 200)
         except Exception as e:
             return make_response(jsonify({"success": False, "error": str(e)}), 500)
 

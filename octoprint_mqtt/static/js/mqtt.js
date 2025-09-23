@@ -190,6 +190,8 @@ $(function () {
        self.publishGcode = ko.observable(false);
        self.publishSnapshot = ko.observable(false);
        self.periodicInterval = ko.observable(1.0);
+      // 카메라 URL
+      self.cameraStreamUrl = ko.observable("");
   
       self.connectionStatus = ko.observable("연결 확인 중...");
       self.isConnected = ko.observable(false);
@@ -215,6 +217,14 @@ $(function () {
          self.publishGcode(!!self.pluginSettings.publish_gcode());
          self.publishSnapshot(!!self.pluginSettings.publish_snapshot());
          self.periodicInterval(parseFloat(self.pluginSettings.periodic_interval()) || 1.0);
+        // 카메라 URL (observable/문자열 모두 처리)
+        try {
+          var cam = self.pluginSettings.camera;
+          if (cam) {
+            var val = (typeof cam.stream_url === "function") ? cam.stream_url() : (cam.stream_url || "");
+            self.cameraStreamUrl(val || "");
+          }
+        } catch (e) {}
   
         // [WIZARD] 탭 클릭: 뒤로는 허용, 앞으로는 금지
         $("#settings_plugin_factor_mqtt .nav-tabs a[data-step]").off("click").on("click", function (e) {
@@ -224,7 +234,7 @@ $(function () {
           if (target <= cur) {
             self.wizardStep(target);
             self.updateAuthBarrier();
-            if (target === 2) self.renderRegisterTab();
+            if (target === 2) { self.renderRegisterTab(); setTimeout(bindCameraSection, 0); }
           }
         });
 
@@ -243,6 +253,7 @@ $(function () {
             } else if (!registered) {
               self.wizardStep(2);
               self.renderRegisterTab();
+              setTimeout(bindCameraSection, 0);
               self.updateAuthBarrier();
             } else {
               self.wizardStep(3);
@@ -257,12 +268,48 @@ $(function () {
               // 상태 실패 시 등록여부를 로컬 기준으로 추정
               var registered = !!sessionStorage.getItem("factor_mqtt.instanceId");
               self.wizardStep(registered ? 3 : 2);
-              if (!registered) self.renderRegisterOverlay();
+              if (!registered) { self.renderRegisterOverlay(); setTimeout(bindCameraSection, 0); }
             }
             self.updateAuthBarrier();
             self.checkConnectionStatus();
           });
       };
+
+      // --- 카메라 UI 바인딩 (등록 탭) ---
+      function bindCameraSection() {
+        var $url = $("#fm-camera-url");
+        if (!$url.length) return;
+        if (!$url.data("inited")) {
+          $url.data("inited", true);
+          $url.val(self.cameraStreamUrl() || "");
+          $("#fm-camera-test").on("click", function(){
+            var url = ($url.val() || "").trim();
+            if (!url) { $("#fm-camera-status").text("URL을 입력하세요."); return; }
+            self.cameraStreamUrl(url);
+            $("#cameraStreamPreview").attr("src", url);
+            $("#cameraStreamModal").modal("show");
+          });
+          $("#fm-camera-save").on("click", function(){
+            var url = ($url.val() || "").trim();
+            self.cameraStreamUrl(url);
+            $("#fm-camera-status").text("저장 중...");
+            OctoPrint.postJson("plugin/factor_mqtt/camera", { stream_url: url })
+              .done(function(){
+                $("#fm-camera-status").text("저장 완료");
+                try {
+                  var cam = self.pluginSettings && self.pluginSettings.camera;
+                  if (cam) {
+                    if (typeof cam.stream_url === "function") cam.stream_url(url); else cam.stream_url = url;
+                  }
+                } catch (e) {}
+              })
+              .fail(function(xhr){
+                var msg = (xhr && xhr.responseJSON && (xhr.responseJSON.error || xhr.responseJSON.message)) || ("HTTP " + (xhr && xhr.status));
+                $("#fm-camera-status").text("저장 실패: " + msg);
+              });
+          });
+        }
+      }
   
       // Settings 저장 직전에 파이썬 설정(observable)으로 되돌려 넣기
       var _orig_onSettingsBeforeSave = self.onSettingsBeforeSave;
@@ -295,6 +342,13 @@ $(function () {
          self.pluginSettings.publish_gcode(!!self.publishGcode());
          self.pluginSettings.publish_snapshot(!!self.publishSnapshot());
          self.pluginSettings.periodic_interval(parseFloat(self.periodicInterval()) || 1.0);
+        // 카메라 값도 메모리 설정에 반영
+        try {
+          if (self.pluginSettings.camera) {
+            if (typeof self.pluginSettings.camera.stream_url === "function") self.pluginSettings.camera.stream_url(self.cameraStreamUrl());
+            else self.pluginSettings.camera.stream_url = self.cameraStreamUrl();
+          }
+        } catch (e) {}
   
         // 저장 후 플러그인에서 _connect_mqtt 재시도하므로 조금 기다렸다 상태 재확인
         setTimeout(self.checkConnectionStatus, 1000);
