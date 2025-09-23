@@ -26,6 +26,7 @@
   </div>
 
   <div id="tab-register" data-bind="visible: wizardStep() === 2" style="margin-bottom:12px;">
+    <h4>프린터 연동</h4>
     <div class="form-inline" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:6px;">
       <select id="fm-register-select" class="form-control" style="min-width:220px;">
         <option value="__new__">신규 등록</option>
@@ -43,7 +44,7 @@
     <hr/>
 
     <div id="fm-camera-section">
-      <h4>카메라 연동</h4>
+      <h4>카메라 연동 (선택)</h4>
       <div class="form-inline" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
         <input type="text" id="fm-camera-url" class="form-control" placeholder="http://&lt;ip&gt;:&lt;port&gt;/stream" style="min-width:320px;"
                data-bind="value: cameraStreamUrl, valueUpdate: 'afterkeydown'">

@@ -286,8 +286,11 @@ $(function () {
             var url = ($url.val() || "").trim();
             if (!url) { $("#fm-camera-status").text("URL을 입력하세요."); return; }
             self.cameraStreamUrl(url);
+            var $modal = $("#cameraStreamModal");
+            // settings 모달 내부라 중첩 모달 z-index 문제가 있을 수 있어 body로 이동
+            try { if (!$modal.parent().is("body")) { $modal.appendTo("body"); } } catch(e) {}
             $("#cameraStreamPreview").attr("src", url);
-            $("#cameraStreamModal").modal("show");
+            $modal.modal({show:true, backdrop:true, keyboard:true});
           });
           $("#fm-camera-save").on("click", function(){
             var url = ($url.val() || "").trim();
