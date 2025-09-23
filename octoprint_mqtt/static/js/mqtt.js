@@ -289,6 +289,19 @@ $(function () {
             var $modal = $("#cameraStreamModal");
             // settings 모달 내부라 중첩 모달 z-index 문제가 있을 수 있어 body로 이동
             try { if (!$modal.parent().is("body")) { $modal.appendTo("body"); } } catch(e) {}
+            if (!$modal.data("bound")) {
+              $modal.data("bound", true);
+              // 명시적으로 닫기 동작 바인딩 (부트스트랩 2/3 호환)
+              $modal.on("click", ".close, [data-dismiss='modal']", function(ev){
+                ev.preventDefault();
+                try { $modal.modal("hide"); } catch(e) { $modal.hide(); }
+                return false;
+              });
+              // 숨김 시 미리보기 해제
+              $modal.on("hidden hidden.bs.modal", function(){
+                $("#cameraStreamPreview").attr("src", "");
+              });
+            }
             $("#cameraStreamPreview").attr("src", url);
             $modal.modal({show:true, backdrop:true, keyboard:true});
           });
