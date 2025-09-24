@@ -39,8 +39,6 @@ def _as_code(x):
         return int(m.group(1)) if m else -1
 
 
-
-
 class MqttPlugin(octoprint.plugin.SettingsPlugin,
                  octoprint.plugin.AssetPlugin,
                  octoprint.plugin.TemplatePlugin,
@@ -497,61 +495,163 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             self._logger.error(f"메시지 발행 중 오류 발생: {e}")
     
     # ---- Camera helpers ----
-    def _build_ffmpeg_cmd(self, opts: dict):
+    # WebRTC(MediaMTX) 전용으로 카메라 파이프라인을 구성합니다.
+    @staticmethod
+    def _safe_int(x, default=0):
+        try:
+            return int(x)
+        except Exception:
+            return default
+
+    @staticmethod
+    def _safe_bool(x, default=False):
+        try:
+            return bool(x)
+        except Exception:
+            return default
+
+
+    def _pick_encoder(self, encoder_opt: str) -> list:
+        enc = (encoder_opt or "").lower()
+        # Raspberry Pi (Bullseye 이후): v4l2m2m
+        if enc in ("v4l2m2m", "h264_v4l2m2m", "v4l2"):
+            return ["-c:v", "h264_v4l2m2m"]
+        # 일부 구형/커스텀: omx
+        if enc in ("omx", "h264_omx"):
+            return ["-c:v", "h264_omx"]
+        # 기본값: 소프트웨어 인코더
+        return ["-c:v", "libx264", "-tune", "zerolatency"]
+
+    def _build_webrtc_mediatx_cmd(self, opts: dict):
         input_url = (opts.get("input") or opts.get("input_url") or
-                    self._settings.get(["camera", "stream_url"]) or "").strip()
-        upstream  = (opts.get("upstream") or opts.get("rtmp_url") or "").strip()
-        if not input_url: raise ValueError("missing input url")
-        if not upstream.startswith("rtmp://"): raise ValueError("missing or invalid RTMP upstream")
+                     self._settings.get(["camera", "stream_url"]) or "").strip()
+        if not input_url:
+            raise ValueError("missing input url")
 
-        target_fps = int(opts.get("fps") or 25)   # ustreamer 25fps에 맞춤(버퍼↓)
-        target_h   = int(opts.get("height") or 720)
-        bitrate_k  = int(opts.get("bitrateKbps") or 1500)
+        # 스트림 이름 & 서버 주소
+        name = (opts.get("name") or "cam").strip()
+        rtsp_base = (opts.get("rtsp_base")
+                     or os.environ.get("MEDIAMTX_RTSP_BASE")
+                     or "rtsp://192.168.200.102:8554").rstrip("/")
+        webrtc_base = (opts.get("webrtc_base")
+                       or os.environ.get("MEDIAMTX_WEBRTC_BASE")
+                       or "http://192.168.200.102:8889").rstrip("/")
 
+        rtsp_url = f"{rtsp_base}/{name}"
+
+        # 화질/프레임/비트레이트
+        fps       = self._safe_int(opts.get("fps", 0))
+        width     = self._safe_int(opts.get("width", 0))
+        height    = self._safe_int(opts.get("height", 0))
+        bitrate_k = self._safe_int(opts.get("bitrateKbps", 2000))
+        encoder   = (opts.get("encoder") or "v4l2m2m")
+        low_lat   = self._safe_bool(opts.get("lowLatency", True))
+        force_mj  = self._safe_bool(opts.get("forceMjpeg", False))
+
+        # 기본 저지연/네트워크 복구 옵션들(중복 제거)
         cmd = [
             "ffmpeg",
-            "-hide_banner","-loglevel","warning",
-            "-re","-fflags","nobuffer","-flags","low_delay",
-            "-analyzeduration","0","-probesize","32k",
+            "-hide_banner", "-loglevel", "info",
+            "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "2",
+            "-fflags", "nobuffer",
+            "-use_wallclock_as_timestamps", "1",
+            "-analyzeduration", "0", "-probesize", "32k",
         ]
+        if low_lat:
+            cmd += ["-flags", "low_delay"]
+
+        # 입력 프로토콜별 최적화
         if input_url.startswith("rtsp://"):
-            cmd += ["-rtsp_transport","tcp"]
+            cmd += ["-rtsp_transport", "tcp"]
+
+        # HTTP MJPEG일 때 명시
+        if force_mj and input_url.startswith(("http://", "https://")):
+            cmd += ["-f", "mjpeg"]
 
         cmd += ["-i", input_url]
 
-        vf = f"fps={target_fps},scale=-2:{target_h},format=yuv420p"
-        g  = target_fps * 2
+        # 필터 체인: fps / 스케일 / 픽셀포맷
+        vf_chain = []
+        if fps > 0:
+            vf_chain.append(f"fps={fps}")
+        if width > 0 and height > 0:
+            vf_chain.append(f"scale={width}:{height}")
+        vf_chain.append("format=yuv420p")
+        cmd += ["-vf", ",".join(vf_chain)]
 
-        # 소프트웨어 인코더(안정): libx264
+        # 인코더
+        cmd += self._pick_encoder(encoder)
+
+        # 키프레임 길이(GOP): WebRTC용으로 2초 정도 권장
+        gop = (fps * 2) if fps > 0 else 50
+
+        # 레이트컨트롤/프로파일
         cmd += [
-            "-vf", vf,
-            "-c:v","libx264","-preset","ultrafast","-tune","zerolatency","-crf","28",
-            "-g", str(g), "-keyint_min", str(g), "-sc_threshold","0",
-            "-an",                    # 🔴 오디오 완전히 제거
-            "-f","flv", upstream
+            "-preset", "veryfast",
+            "-profile:v", "baseline",
+            "-g", str(gop), "-keyint_min", str(gop), "-sc_threshold", "0",
+            "-b:v", f"{bitrate_k}k",
+            "-maxrate", f"{int(bitrate_k * 11 / 10)}k",
+            "-bufsize", f"{bitrate_k}k",
+            "-an",  # 오디오 제거
         ]
-        return cmd
+
+        # 출력: RTSP Publish → MediaMTX
+        cmd += ["-f", "rtsp", "-rtsp_transport", "tcp", rtsp_url]
+
+        # 프론트에서 바로 볼 수 있는 WebRTC URL 힌트(메시지에 실어 보냄)
+        extra = {
+            "play_url_webrtc": f"{webrtc_base}/{name}",
+            "publish_url_rtsp": rtsp_url,
+            "name": name,
+        }
+        return cmd, extra
+
+    def _build_camera_cmd(self, opts: dict):
+        return self._build_webrtc_mediatx_cmd(opts)
 
 
     def _camera_status(self):
         running = bool(self._camera_proc and (self._camera_proc.poll() is None))
         pid = (self._camera_proc.pid if running and self._camera_proc else None)
-        return {"running": running, "pid": pid, "started_at": self._camera_started_at, "last_error": self._camera_last_error}
+        out = {
+            "running": running,
+            "pid": pid,
+            "started_at": self._camera_started_at,
+            "last_error": self._camera_last_error
+        }
+        if getattr(self, "_webrtc_last", None):
+            out["webrtc"] = self._webrtc_last
+        return out
 
     def _start_ffmpeg_subprocess(self, opts: dict):
         if self._camera_proc and self._camera_proc.poll() is None:
+            # 이미 실행 중이면 최근 URL만 갱신해서 반환
+            built = self._build_camera_cmd(opts)
+            if isinstance(built, tuple):
+                _, extra = built
+                self._webrtc_last = extra or {}
             return {"success": True, "already_running": True, **self._camera_status()}
+
         try:
-            cmd = self._build_ffmpeg_cmd(opts)
+            built = self._build_camera_cmd(opts)
+            if isinstance(built, tuple):
+                cmd, extra = built
+            else:
+                cmd, extra = built, {}
+
+            # 라즈베리(리눅스) 기준 프로세스 그룹 생성해서 종료 간편화
             self._camera_proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.STDOUT,
                 preexec_fn=os.setsid
             )
+            self._webrtc_last = extra or {}
             self._camera_started_at = time.time()
             self._camera_last_error = None
-            self._logger.info("[CAMERA] ffmpeg started pid=%s cmd=%s", self._camera_proc.pid, " ".join(shlex.quote(c) for c in cmd))
+            self._logger.info("[CAMERA] pipeline started pid=%s cmd=%s",
+                              self._camera_proc.pid, " ".join(shlex.quote(c) for c in cmd))
             return {"success": True, **self._camera_status()}
         except Exception as e:
             self._camera_last_error = str(e)
@@ -577,13 +677,16 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             self._camera_last_error = str(e)
             self._logger.exception("[CAMERA] stop failed")
             return {"success": False, "error": str(e), **self._camera_status()}
-
+    # ---------------------------------------------------------
+    # (그대로 사용해도 OK) systemd or subprocess 선택
     def _systemctl(self, unit: str, action: str):
         try:
-            r = subprocess.run(["systemctl", action, unit], capture_output=True, text=True, timeout=8)
+            r = subprocess.run(["systemctl", action, unit],
+                               capture_output=True, text=True, timeout=8)
             ok = (r.returncode == 0)
             if not ok:
-                self._logger.warning("[CAMERA] systemctl %s %s rc=%s out=%s err=%s", action, unit, r.returncode, r.stdout, r.stderr)
+                self._logger.warning("[CAMERA] systemctl %s %s rc=%s out=%s err=%s",
+                                     action, unit, r.returncode, r.stdout, r.stderr)
             return {"success": ok, "stdout": r.stdout, "stderr": r.stderr, "rc": r.returncode}
         except Exception as e:
             return {"success": False, "error": str(e)}
@@ -608,7 +711,9 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             self._publish_message(topic, payload)
         except Exception as e:
             self._logger.debug(f"publish camera state error: {e}")
-    
+            
+# ==== END Camera helpers ====
+
 
 
     def _get_sd_tree(self, force_refresh=False, timeout=0.0):
