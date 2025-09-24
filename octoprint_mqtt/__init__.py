@@ -77,8 +77,8 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             publish_gcode=False,
             publish_snapshot=True,
             periodic_interval=1.0,
-            auth_api_base="http://192.168.200.103:3000",
-            register_api_base="http://192.168.200.103:3000",
+            auth_api_base="http://192.168.200.102:3000",
+            register_api_base="http://192.168.200.102:3000",
             instance_id="",
             registered=False,
             receive_gcode_enabled=True,
@@ -498,25 +498,46 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
     
     # ---- Camera helpers ----
     def _build_ffmpeg_cmd(self, opts: dict):
-        device = opts.get("device", "/dev/video0")
-        width  = int(opts.get("width", 1280))
-        height = int(opts.get("height", 720))
-        fps    = int(opts.get("fps", 30))
+        # 입력 URL(옵션 우선, 없으면 설정의 camera.stream_url)
+        input_url = (opts.get("input") or opts.get("input_url") or
+                     self._settings.get(["camera", "stream_url"]) or "").strip()
+        # RTMP 업스트림 URL
+        upstream = (opts.get("upstream") or opts.get("rtmp_url") or "").strip()
+
+        width  = int(opts.get("width", 0) or 0)
+        height = int(opts.get("height", 0) or 0)
+        fps    = int(opts.get("fps", 0) or 0)
         bitrate_k = int(opts.get("bitrateKbps", 2000))
-        upstream = (opts.get("upstream") or "").strip()
-        if not upstream:
-            raise ValueError("missing upstream url")
-        mux = ("flv" if upstream.startswith("rtmp://") else "mpegts")
-        cmd = [
-            "ffmpeg",
-            "-f", "v4l2",
-            "-framerate", str(fps),
-            "-video_size", f"{width}x{height}",
-            "-i", device,
+
+        if not input_url:
+            raise ValueError("missing input url")
+        if not upstream or not upstream.startswith("rtmp://"):
+            raise ValueError("missing or invalid RTMP upstream")
+
+        cmd = ["ffmpeg"]
+
+        # 네트워크 입력 안정화 옵션
+        cmd += ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "2"]
+
+        # RTSP는 TCP로 강제
+        if input_url.startswith("rtsp://"):
+            cmd += ["-rtsp_transport", "tcp"]
+
+        # 입력 URL 지정
+        cmd += ["-i", input_url]
+
+        # 선택적 프레임레이트/리사이즈
+        if fps > 0:
+            cmd += ["-r", str(fps)]
+        if width > 0 and height > 0:
+            cmd += ["-vf", f"scale={width}:{height}"]
+
+        # 인코딩 및 RTMP(FLV) 출력
+        cmd += [
             "-vcodec", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
             "-profile:v", "baseline", "-pix_fmt", "yuv420p",
             "-b:v", f"{bitrate_k}k", "-maxrate", f"{int(bitrate_k*11/10)}k", "-bufsize", f"{bitrate_k}k",
-            "-f", mux,
+            "-f", "flv",
             upstream
         ]
         return cmd
