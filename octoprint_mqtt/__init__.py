@@ -498,49 +498,40 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
     
     # ---- Camera helpers ----
     def _build_ffmpeg_cmd(self, opts: dict):
-        # 입력 URL(옵션 우선, 없으면 설정의 camera.stream_url)
         input_url = (opts.get("input") or opts.get("input_url") or
-                     self._settings.get(["camera", "stream_url"]) or "").strip()
-        # RTMP 업스트림 URL
-        upstream = (opts.get("upstream") or opts.get("rtmp_url") or "").strip()
+                    self._settings.get(["camera", "stream_url"]) or "").strip()
+        upstream  = (opts.get("upstream") or opts.get("rtmp_url") or "").strip()
+        if not input_url: raise ValueError("missing input url")
+        if not upstream.startswith("rtmp://"): raise ValueError("missing or invalid RTMP upstream")
 
-        width  = int(opts.get("width", 0) or 0)
-        height = int(opts.get("height", 0) or 0)
-        fps    = int(opts.get("fps", 0) or 0)
-        bitrate_k = int(opts.get("bitrateKbps", 2000))
+        target_fps = int(opts.get("fps") or 25)   # ustreamer 25fps에 맞춤(버퍼↓)
+        target_h   = int(opts.get("height") or 720)
+        bitrate_k  = int(opts.get("bitrateKbps") or 1500)
 
-        if not input_url:
-            raise ValueError("missing input url")
-        if not upstream or not upstream.startswith("rtmp://"):
-            raise ValueError("missing or invalid RTMP upstream")
-
-        cmd = ["ffmpeg"]
-
-        # 네트워크 입력 안정화 옵션
-        cmd += ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "2"]
-
-        # RTSP는 TCP로 강제
+        cmd = [
+            "ffmpeg",
+            "-hide_banner","-loglevel","warning",
+            "-re","-fflags","nobuffer","-flags","low_delay",
+            "-analyzeduration","0","-probesize","32k",
+        ]
         if input_url.startswith("rtsp://"):
-            cmd += ["-rtsp_transport", "tcp"]
+            cmd += ["-rtsp_transport","tcp"]
 
-        # 입력 URL 지정
         cmd += ["-i", input_url]
 
-        # 선택적 프레임레이트/리사이즈
-        if fps > 0:
-            cmd += ["-r", str(fps)]
-        if width > 0 and height > 0:
-            cmd += ["-vf", f"scale={width}:{height}"]
+        vf = f"fps={target_fps},scale=-2:{target_h},format=yuv420p"
+        g  = target_fps * 2
 
-        # 인코딩 및 RTMP(FLV) 출력
+        # 소프트웨어 인코더(안정): libx264
         cmd += [
-            "-vcodec", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
-            "-profile:v", "baseline", "-pix_fmt", "yuv420p",
-            "-b:v", f"{bitrate_k}k", "-maxrate", f"{int(bitrate_k*11/10)}k", "-bufsize", f"{bitrate_k}k",
-            "-f", "flv",
-            upstream
+            "-vf", vf,
+            "-c:v","libx264","-preset","ultrafast","-tune","zerolatency","-crf","28",
+            "-g", str(g), "-keyint_min", str(g), "-sc_threshold","0",
+            "-an",                    # 🔴 오디오 완전히 제거
+            "-f","flv", upstream
         ]
         return cmd
+
 
     def _camera_status(self):
         running = bool(self._camera_proc and (self._camera_proc.poll() is None))
