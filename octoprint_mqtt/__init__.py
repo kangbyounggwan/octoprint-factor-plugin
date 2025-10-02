@@ -530,12 +530,8 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
 
         # 스트림 이름 & 서버 주소
         name = (opts.get("name") or "cam").strip()
-        rtsp_base = (opts.get("rtsp_base")
-                     or os.environ.get("MEDIAMTX_RTSP_BASE")
-                     or "rtsp://192.168.219.110:8554").rstrip("/")
-        webrtc_base = (opts.get("webrtc_base")
-                       or os.environ.get("MEDIAMTX_WEBRTC_BASE")
-                       or "http://192.168.219.110:8889").rstrip("/")
+        rtsp_base = ("rtsp://192.168.219.110:8554").rstrip("/")
+        webrtc_base = ("http://192.168.219.110:8889").rstrip("/")
 
         rtsp_url = f"{rtsp_base}/{name}"
 
