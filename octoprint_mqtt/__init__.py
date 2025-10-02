@@ -561,7 +561,9 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             cmd += ["-flags", "low_delay"]
 
         # 입력 프로토콜별 최적화
-        if input_url.startswith("rtsp://"):
+        if input_url.startswith("/dev/video"):
+            cmd += ["-f", "v4l2"]
+        elif input_url.startswith("rtsp://"):
             cmd += ["-rtsp_transport", "tcp"]
 
         # HTTP MJPEG일 때 명시
