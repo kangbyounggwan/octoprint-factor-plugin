@@ -75,8 +75,9 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             publish_gcode=False,
             publish_snapshot=True,
             periodic_interval=1.0,
-            auth_api_base="http://192.168.219.110:5000",
-            register_api_base="http://192.168.219.110:5000",
+            service_domain="factor.io.kr",
+            auth_api_base="",
+            register_api_base="",
             instance_id="",
             registered=False,
             receive_gcode_enabled=True,
@@ -122,6 +123,19 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
 
 
     # --- 여기부터 유틸 메서드 추가 ---
+    def _service_host(self):
+        host = (self._settings.get(["service_domain"]) or "").strip().rstrip("/")
+        if not host:
+            return "factor.io.kr"
+        if host.startswith(("http://", "https://")):
+            try:
+                from urllib.parse import urlparse
+                parsed = urlparse(host)
+                host = parsed.netloc or parsed.path
+            except Exception:
+                pass
+        return host
+
     def _log_api_endpoints(self, host: str, port: int):
         """
         플러그인 로드 시 접근 가능한 API 엔드포인트를 콘솔(octoprint.log)에 출력
@@ -530,12 +544,13 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
 
         # 스트림 이름 & 서버 주소
         name = (opts.get("name") or "cam").strip()
+        host = self._service_host()
         rtsp_base = (opts.get("rtsp_base")
                      or os.environ.get("MEDIAMTX_RTSP_BASE")
-                     or "rtsp://192.168.219.110:8554").rstrip("/")
+                     or f"rtsp://{host}:8554").rstrip("/")
         webrtc_base = (opts.get("webrtc_base")
                        or os.environ.get("MEDIAMTX_WEBRTC_BASE")
-                       or "http://192.168.219.110:8889").rstrip("/")
+                       or f"https://{host}/media").rstrip("/")
 
         rtsp_url = f"{rtsp_base}/{name}"
 
@@ -821,10 +836,10 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             if not email or not password:
                 return make_response(jsonify({"error": "email and password required"}), 400)
 
-            api_base = (self._settings.get(["auth_api_base"])).rstrip("/")
+            api_base = (self._settings.get(["auth_api_base"]) or f"https://{self._service_host()}").rstrip("/")
             if not re.match(r"^https?://", api_base):
                 return make_response(jsonify({"error": "invalid auth_api_base"}), 500)
-
+            
             url = f"{api_base}/api/auth/login"
             resp = requests.post(url, json={"email": email, "password": password}, timeout=8)
             try:
@@ -840,7 +855,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
     def proxy_printers_summary(self):
         """사용자 ID에 등록된 프린터 요약을 외부 API로부터 안전하게 프록시"""
         try:
-            base = (self._settings.get(["register_api_base"]) or self._settings.get(["auth_api_base"]) or "").rstrip("/")
+            base = (self._settings.get(["register_api_base"]) or self._settings.get(["auth_api_base"]) or f"https://{self._service_host()}").rstrip("/")
             if not base or not re.match(r"^https?://", base):
                 return make_response(jsonify({"error": "invalid register_api_base"}), 500)
             token = request.headers.get("Authorization") or ""
@@ -874,7 +889,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             if not instance_id:
                 return make_response(jsonify({"success": False, "error": "missing instance_id"}), 400)
 
-            base = (self._settings.get(["register_api_base"]) or self._settings.get(["auth_api_base"])).rstrip("/")
+            base = (self._settings.get(["register_api_base"]) or self._settings.get(["auth_api_base"]) or f"https://{self._service_host()}").rstrip("/")
             if not re.match(r"^https?://", base):
                 return make_response(jsonify({"success": False, "error": "invalid register_api_base"}), 500)
 
