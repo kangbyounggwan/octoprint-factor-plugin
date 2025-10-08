@@ -815,29 +815,34 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
     @octoprint.plugin.BlueprintPlugin.route("/auth/login", methods=["POST"])
     def auth_login(self):
         try:
-            # 진입 로그: 전체 URL/경로/메서드 확인용
+            # 요청 메타 로깅 (민감정보 마스킹)
             try:
-                self._logger.info(
-                    "[AUTH][LOGIN][HIT] method=%s path=%s url=%s base_url=%s script_root=%s",
-                    getattr(request, "method", None),
-                    getattr(request, "path", None),
-                    getattr(request, "url", None),
-                    getattr(request, "base_url", None),
-                    getattr(request, "script_root", None)
-                )
+                self._logger.info("[AUTH][LOGIN][IN] method=%s url=%s path=%s", request.method, getattr(request, "url", None), getattr(request, "path", None))
             except Exception:
                 pass
+
             data = request.get_json(force=True) or {}
             email = (data.get("email") or "").strip()
             password = data.get("password") or ""
             if not email or not password:
                 return make_response(jsonify({"error": "email and password required"}), 400)
-
-            api_base = (self._settings.get(["auth_api_base"])).rstrip("/")
+            
+            api_base = (self._settings.get(["auth_api_base"]) or "").rstrip("/")
+            try:
+                masked = re.sub(r"^(.).*(@.*)$", r"*\\2", email) if email else ""
+                self._logger.info("[AUTH][LOGIN][CONF] auth_api_base=%s email=%s", api_base or "", masked)
+            except Exception:
+                pass
             if not re.match(r"^https?://", api_base):
+                self._logger.error("[AUTH][LOGIN][ERR] invalid auth_api_base: %s", api_base)
                 return make_response(jsonify({"error": "invalid auth_api_base"}), 500)
 
             url = f"{api_base}/api/auth/login"
+            try:
+                self._logger.info("[AUTH][LOGIN][OUT] POST %s", url)
+            except Exception:
+                pass
+
             resp = requests.post(url, json={"email": email, "password": password}, timeout=8)
             try:
                 is_json = (resp.headers.get("content-type", "").lower().startswith("application/json"))
@@ -845,17 +850,13 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
                 is_json = False
             out = (resp.json() if is_json else {"raw": resp.text})
             try:
-                self._logger.info(
-                    "[AUTH][LOGIN][UPSTREAM] status=%s url=%s keys=%s",
-                    getattr(resp, "status_code", None), url,
-                    list(out.keys()) if isinstance(out, dict) else type(out).__name__
-                )
+                self._logger.info("[AUTH][LOGIN][BACK] status=%s ctype=%s", resp.status_code, resp.headers.get("content-type"))
             except Exception:
                 pass
             return make_response(jsonify(out), resp.status_code)
         except Exception as e:
             try:
-                self._logger.exception("[AUTH][LOGIN][ERROR]")
+                self._logger.exception("[AUTH][LOGIN][EXC] %s", e)
             except Exception:
                 pass
             return make_response(jsonify({"error": str(e)}), 500)
