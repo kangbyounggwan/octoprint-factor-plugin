@@ -5,6 +5,18 @@ $(function () {
     // [AUTH ADD] 설정: 실제 서버 주소로 교체하세요
     var AUTH_URL = "plugin/factor_mqtt/auth/login";
 
+    // 최종 API 호출 URL 계산 유틸 (API_BASEURL 적용)
+    function buildApiUrl(path) {
+      try {
+        var base = (typeof API_BASEURL !== "undefined" && API_BASEURL) ? API_BASEURL : "/api/";
+        if (base.charAt(base.length - 1) !== "/") base += "/";
+        path = (path.charAt(0) === "/" ? path.substring(1) : path);
+        return base + path;
+      } catch (e) {
+        return "/api/" + (path.charAt(0) === "/" ? path.substring(1) : path);
+      }
+    }
+
     // [AUTH ADD] 상태 저장
     self.isAuthed = ko.observable(!!sessionStorage.getItem("factor_mqtt.auth"));
     self.authResp = ko.observable(self.isAuthed() ? JSON.parse(sessionStorage.getItem("factor_mqtt.auth")) : null);
@@ -32,9 +44,21 @@ $(function () {
         var pw = $("#fm-login-pw").val() || "";
         if (!email || !pw) { $("#fm-login-status").text("Email과 PW를 입력하세요."); return; }
         $("#fm-login-status").text("로그인 중...");
+        // 최종 호출 URL 로깅(경로 문제 즉시 확인)
+        var reqUrl = buildApiUrl(AUTH_URL);
+        var maskedEmail = email.replace(/.(?=.*@)/g, "*");
+        try { console.info("[FACTOR][LOGIN][REQ]", { url: reqUrl, email: maskedEmail }); } catch (e) {}
+
         // OctoPrint.postJson: 자동으로 /api/ prefix와 X-Api-Key 헤더 포함
         OctoPrint.postJson(AUTH_URL, { email: email, password: pw })
-          .done(function (data) {
+          .done(function (data, textStatus, jqXHR) {
+            try {
+              console.info("[FACTOR][LOGIN][OK]", {
+                status: jqXHR && jqXHR.status,
+                url: (jqXHR && jqXHR.responseURL) || reqUrl,
+                keys: data ? Object.keys(data) : []
+              });
+            } catch (e) {}
             var ok = !!(data && (data.success === true || (!data.error && (data.user || data.session))));
             if (ok) {
               sessionStorage.setItem("factor_mqtt.auth", JSON.stringify(data));
@@ -47,7 +71,22 @@ $(function () {
               $("#fm-login-status").text(msg); self.isAuthed(false);
             }
           })
-          .fail(function (xhr) { var m = (xhr && xhr.responseJSON && (xhr.responseJSON.error || xhr.responseJSON.message)) || "로그인 실패"; $("#fm-login-status").text(m); self.isAuthed(false); });
+          .fail(function (xhr) {
+            var msg = (xhr && xhr.responseJSON && (xhr.responseJSON.error || xhr.responseJSON.message)) || "로그인 실패";
+            if (xhr && xhr.status === 404) {
+              msg = "엔드포인트(경로) 404: " + ((xhr && xhr.responseURL) || reqUrl) + " - API 프리픽스(/api) 확인 필요";
+            }
+            try {
+              console.error("[FACTOR][LOGIN][FAIL]", {
+                status: xhr && xhr.status,
+                statusText: xhr && xhr.statusText,
+                url: (xhr && xhr.responseURL) || reqUrl,
+                respJSON: xhr && xhr.responseJSON,
+                respText: xhr && xhr.responseText && xhr.responseText.slice(0, 512)
+              });
+            } catch (e) {}
+            $("#fm-login-status").text(msg); self.isAuthed(false);
+          });
       });
     };
 
