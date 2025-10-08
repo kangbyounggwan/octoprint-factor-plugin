@@ -815,6 +815,18 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
     @octoprint.plugin.BlueprintPlugin.route("/auth/login", methods=["POST"])
     def auth_login(self):
         try:
+            # 진입 로그: 전체 URL/경로/메서드 확인용
+            try:
+                self._logger.info(
+                    "[AUTH][LOGIN][HIT] method=%s path=%s url=%s base_url=%s script_root=%s",
+                    getattr(request, "method", None),
+                    getattr(request, "path", None),
+                    getattr(request, "url", None),
+                    getattr(request, "base_url", None),
+                    getattr(request, "script_root", None)
+                )
+            except Exception:
+                pass
             data = request.get_json(force=True) or {}
             email = (data.get("email") or "").strip()
             password = data.get("password") or ""
@@ -832,8 +844,20 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             except Exception:
                 is_json = False
             out = (resp.json() if is_json else {"raw": resp.text})
+            try:
+                self._logger.info(
+                    "[AUTH][LOGIN][UPSTREAM] status=%s url=%s keys=%s",
+                    getattr(resp, "status_code", None), url,
+                    list(out.keys()) if isinstance(out, dict) else type(out).__name__
+                )
+            except Exception:
+                pass
             return make_response(jsonify(out), resp.status_code)
         except Exception as e:
+            try:
+                self._logger.exception("[AUTH][LOGIN][ERROR]")
+            except Exception:
+                pass
             return make_response(jsonify({"error": str(e)}), 500)
 
     @octoprint.plugin.BlueprintPlugin.route("/summary", methods=["GET"])

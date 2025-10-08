@@ -56,13 +56,8 @@ $(function () {
         var maskedEmail = email.replace(/.(?=.*@)/g, "*");
         try { console.info("[FACTOR][LOGIN][REQ]", { url: reqUrl, email: maskedEmail }); } catch (e) {}
 
-        // 블루프린트 엔드포인트는 /plugin/... 경로로 직접 호출 (OctoPrint.ajax 사용)
-        OctoPrint.ajax("POST", AUTH_URL, {
-          data: JSON.stringify({ email: email, password: pw }),
-          contentType: "application/json; charset=UTF-8",
-          dataType: "json",
-          processData: false
-        })
+        // OctoPrint.postJson: 자동으로 /api 프리픽스(/api/plugin/...)와 헤더 포함
+        OctoPrint.postJson(AUTH_URL, { email: email, password: pw })
           .done(function (data, textStatus, jqXHR) {
             try {
               console.info("[FACTOR][LOGIN][OK]", {
