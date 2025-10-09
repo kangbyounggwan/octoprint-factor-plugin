@@ -603,7 +603,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
 
         # 프론트에서 바로 볼 수 있는 WebRTC URL 힌트(메시지에 실어 보냄)
         extra = {
-            "play_url_webrtc": f"{webrtc_base}/{name}",
+            "play_url_webrtc": f"{webrtc_base}/play.html?src={name}",
             "publish_url_rtsp": rtsp_url,
             "name": name,
         }
