@@ -1,4 +1,4 @@
-/* globals OctoPrint, ko, $, API_BASEURL */
+ /* globals OctoPrint, ko, $, API_BASEURL */
 $(function () {
     function MqttViewModel(parameters) {
       var self = this;
@@ -54,9 +54,9 @@ $(function () {
     // [AUTH ADD] 오버레이 토글 + 가드 적용
     self.updateAuthBarrier = function () {
       var authed = !!self.isAuthed();
-      // 3단계에서만 전체 활성화
-      setInputsDisabled(!(authed && self.wizardStep() === 3));
-      if (authed && self.wizardStep() === 3) {
+      // 2단계 이상에서 활성화 (단순화)
+      setInputsDisabled(!(authed && self.wizardStep() >= 2));
+      if (authed && self.wizardStep() >= 2) {
         try { self.checkConnectionStatus(); } catch (e) {}
       }
     };
@@ -70,9 +70,7 @@ $(function () {
     self.renderRegisterTab = function () {
       var root = $("#settings_plugin_factor_mqtt");
       if (!root.length) return;
-      // 바인딩(중복 방지)
-      if (!self.instanceId()) self.instanceId(genUuid());
-      $("#fm-instance-id").val(self.instanceId());
+      // 바인딩(중복 방지) - 초기 UUID는 셀렉트 상태에 따라 change 핸들러에서 생성/설정
       if (!$("#fm-register-btn").data("bound")) {
         $("#fm-register-btn").data("bound", true);
         // 토큰 선택 셀렉트 채우기: 현재는 로그인 토큰 1개만 존재하므로, "신규 등록"과 "로그인 토큰 사용" 두 옵션 제공
@@ -97,33 +95,24 @@ $(function () {
             });
         }
 
-        // 셀렉트 변경 시 UI 토글
+        // 셀렉트 변경 시 UI 토글 (불필요 버튼은 더 이상 사용하지 않으므로 토글 대상에서 제외)
         sel.on("change", function () {
           var v = $(this).val();
           var isNew = (v === "__new__");
-          $("#fm-instance-id, #fm-instance-gen, #fm-register-btn").toggle(isNew);
-          $("#fm-register-next").toggle(!isNew);
-          if (!isNew && v && v !== "__token__") {
+          $("#fm-instance-id, #fm-instance-gen").toggle(isNew);
+          if (isNew) {
+            // 신규 등록: 항상 새로운 UUID를 발급하여 입력란에 반영
+            var nid = genUuid();
+            self.instanceId(nid);
+            $("#fm-instance-id").val(nid);
+          } else if (v && v !== "__token__") {
             // 기존 UUID 선택 시 그 값을 instanceId로 세팅
-            self.instanceId(v); $("#fm-instance-id").val(v);
+            self.instanceId(v);
+            $("#fm-instance-id").val(v);
           }
         }).trigger("change");
-
-        // 통합 버튼 사용으로 기존 버튼은 숨김 처리 (UI 혼란 방지)
+        // 기존 등록/다음 버튼은 UI에서 사용하지 않음
         $("#fm-register-btn, #fm-register-next").hide();
-
-        $("#fm-register-next").on("click", function () {
-          // 기존 등록 선택 시 바로 3단계로 이동
-          var v = sel.val();
-          if (v && v !== "__new__") {
-            if (v !== "__token__") self.instanceId(v);
-            // 서버에 저장 요청
-            try {
-              OctoPrint.postJson("plugin/factor_mqtt/device", { device_uuid: self.instanceId() });
-            } catch (e) {}
-            self.wizardStep(3); self.updateAuthBarrier();
-          }
-        });
         // 상태 패널 채우기: 서버 status에서 요약 읽기
         OctoPrint.ajax("GET", "plugin/factor_mqtt/status").done(function (r) {
           try {
@@ -148,31 +137,7 @@ $(function () {
         $("#fm-instance-gen").on("click", function () {
           var iid = genUuid(); self.instanceId(iid); $("#fm-instance-id").val(iid);
         });
-        $("#fm-register-btn").on("click", function () {
-          var iid = ($("#fm-instance-id").val() || "").trim();
-          if (!iid) { $("#fm-register-status").text("Instance ID를 입력/생성하세요."); return; }
-          $("#fm-register-status").text("등록 중...");
-          var auth = self.authResp() || {}; var user = auth.user || null; var token = auth.access_token || auth.accessToken;
-          var body = { instance_id: iid, user: user && { id: user.id } };
-          if (token) body.access_token = token;
-          OctoPrint.postJson("plugin/factor_mqtt/register", body)
-            .done(function (data) {
-              if (data && (data.success === true || data.raw || Object.keys(data).length)) {
-                $("#fm-register-status").text("등록 성공"); sessionStorage.setItem("factor_mqtt.instanceId", iid);
-                // 서버에 저장 요청
-                try {
-                  OctoPrint.postJson("plugin/factor_mqtt/device", { device_uuid: iid });
-                } catch (e) {}
-                self.wizardStep(3); self.updateAuthBarrier();
-              } else {
-                $("#fm-register-status").text("등록 실패");
-              }
-            })
-            .fail(function (xhr) {
-              var msg = (xhr && xhr.responseJSON && (xhr.responseJSON.error || xhr.responseJSON.message)) || ("등록 실패 (" + (xhr && xhr.status) + ")");
-              $("#fm-register-status").text(msg);
-            });
-        });
+        // 개별 등록 버튼 로직 제거
       }
     };
   
@@ -357,13 +322,13 @@ $(function () {
               });
           });
 
-          // 카메라 섹션 하단에 통합 등록 버튼 추가 (카메라 저장 + 등록 + 디바이스 저장)
-          if (!$("#fm-register-all").length) {
-            var $actions = $('<div style="margin-top:8px;"></div>');
+          // 오른쪽 하단 플로팅 통합 등록 버튼 추가 (카메라 저장 + 등록 + 디바이스 저장)
+          if (!$("#fm-register-floating").length) {
+            var $container = $('<div id="fm-register-floating" style="position:fixed; right:16px; bottom:16px; z-index:1061; display:flex; gap:8px;"></div>');
             var $btnAll = $('<button id="fm-register-all" class="btn btn-primary">등록</button>');
-            var $status = $('<span id="fm-register-all-status" class="text-muted" style="margin-left:8px;"></span>');
-            $actions.append($btnAll).append($status);
-            $("#fm-camera-section .form-inline").last().after($actions);
+            var $status = $('<span id="fm-register-all-status" class="text-muted" style="align-self:center;"></span>');
+            $container.append($btnAll).append($status);
+            try { $("body").append($container); } catch (e) {}
 
             if (!$btnAll.data("bound")) {
               $btnAll.data("bound", true);
@@ -412,6 +377,56 @@ $(function () {
                   });
               });
             }
+            // 현재 단계에 따라 표시/숨김
+            try { $("#fm-register-floating").toggle(self.wizardStep() === 2); } catch (e) {}
+          }
+        } else {
+          // 이미 초기화된 경우에도 버튼이 없으면 보장 생성
+          if (!$("#fm-register-floating").length) {
+            var $container2 = $('<div id="fm-register-floating" style="position:fixed; right:16px; bottom:16px; z-index:1061; display:flex; gap:8px;"></div>');
+            var $btnAll2 = $('<button id="fm-register-all" class="btn btn-primary">등록</button>');
+            var $status2 = $('<span id="fm-register-all-status" class="text-muted" style="align-self:center;"></span>');
+            $container2.append($btnAll2).append($status2);
+            try { $("body").append($container2); } catch (e) {}
+
+            if (!$btnAll2.data("bound")) {
+              $btnAll2.data("bound", true);
+              $btnAll2.on("click", function(){
+                var iid = ($("#fm-instance-id").val() || self.instanceId() || "").trim();
+                if (!iid) { iid = genUuid(); $("#fm-instance-id").val(iid); self.instanceId(iid); }
+                var isNew = true;
+                try { var selv = ($("#fm-register-select").val() || "__new__"); isNew = (selv === "__new__"); } catch (e) {}
+                var url = ($url.val() || "").trim();
+                $("#fm-register-all-status").text("카메라 저장 중...");
+                OctoPrint.postJson("plugin/factor_mqtt/camera", { stream_url: url })
+                  .done(function(){
+                    $("#fm-register-all-status").text("카메라 저장 완료, 등록 중...");
+                    var auth = self.authResp() || {}; var user = auth.user || null; var token = auth.access_token || auth.accessToken;
+                    var body = { instance_id: iid, user: user && { id: user.id }, is_new: !!isNew };
+                    if (token) body.access_token = token;
+                    OctoPrint.postJson("plugin/factor_mqtt/register", body)
+                      .done(function(data){
+                        var ok = !!(data && (data.success === true || data.raw || Object.keys(data).length));
+                        if (!ok) { $("#fm-register-all-status").text("등록 실패"); return; }
+                        try { sessionStorage.setItem("factor_mqtt.instanceId", iid); } catch (e) {}
+                        try { OctoPrint.postJson("plugin/factor_mqtt/device", { device_uuid: iid }); } catch (e) {}
+                        $("#fm-register-all-status").text("등록 성공");
+                        self.wizardStep(3);
+                        self.updateAuthBarrier();
+                        try { self.checkConnectionStatus(); } catch (e) {}
+                      })
+                      .fail(function(xhr){
+                        var msg = (xhr && xhr.responseJSON && (xhr.responseJSON.error || xhr.responseJSON.message)) || ("등록 실패 (" + (xhr && xhr.status) + ")");
+                        $("#fm-register-all-status").text(msg);
+                      });
+                  })
+                  .fail(function(xhr){
+                    var msg = (xhr && xhr.responseJSON && (xhr.responseJSON.error || xhr.responseJSON.message)) || ("카메라 저장 실패 (" + (xhr && xhr.status) + ")");
+                    $("#fm-register-all-status").text(msg);
+                  });
+              });
+            }
+            try { $("#fm-register-floating").toggle(self.wizardStep() === 2); } catch (e) {}
           }
         }
       }
