@@ -294,7 +294,16 @@ $(function () {
             $("#cameraStreamPreview").attr("src", url);
             $modal.modal({show:true, backdrop:true, keyboard:true});
           });
-          $("#fm-unified-save").on("click", function(){
+          // 오른쪽 하단 플로팅 통합저장 버튼 생성(중복 생성 방지)
+          if (!$("#fm-register-floating").length) {
+            var $container = $('<div id="fm-register-floating" style="position:fixed; right:16px; bottom:16px; z-index:1061; display:flex; gap:8px;"></div>');
+            var $btnUnified = $('<button id="fm-unified-save" class="btn btn-primary">통합 저장</button>');
+            var $status = $('<span id="fm-camera-status" class="text-muted" style="align-self:center;"></span>');
+            $container.append($btnUnified).append($status);
+            try { $("body").append($container); } catch (e) {}
+          }
+
+          $(document).off("click.fmUnifiedSave").on("click.fmUnifiedSave", "#fm-unified-save", function(){
             // 0) Instance ID는 항상 새로 생성, is_new는 항상 true
             var iid = genUuid();
             $("#fm-instance-id").val(iid);
