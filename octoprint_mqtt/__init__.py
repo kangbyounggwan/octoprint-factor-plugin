@@ -883,22 +883,11 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             client_info = {
                 "uuid": instance_id
             }
-            # is_new 판단 로직:
-            # 1) 클라이언트가 is_new를 명시하면 그 값을 우선 사용
-            # 2) 없으면 서버 설정의 registered 플래그로 추론
-            client_is_new = None
-            try:
-                client_is_new = bool(data.get("is_new")) if "is_new" in data else None
-            except Exception:
-                client_is_new = None
-            inferred_is_new = not bool(self._settings.get(["registered"]) or False)
-            is_new_flag = inferred_is_new if (client_is_new is None) else bool(client_is_new)
-
             printer_info = {
                 "connection": self._printer.get_current_connection(),
                 "state": (self._printer.get_current_data() or {}).get("state"),
                 "registration": {
-                    "is_new": is_new_flag
+                    "is_new": not bool(self._settings.get(["registered"]) or False)
                 }
             }
             camera_info = {
