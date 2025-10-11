@@ -71,8 +71,7 @@ $(function () {
       var root = $("#settings_plugin_factor_mqtt");
       if (!root.length) return;
       // 바인딩(중복 방지)
-      if (!self.instanceId()) self.instanceId(genUuid());
-      $("#fm-instance-id").val(self.instanceId());
+      // 초기 Instance ID는 셀렉트 상태에 따라 동적으로 설정합니다.
       if (!$("#fm-register-btn").data("bound")) {
         $("#fm-register-btn").data("bound", true);
         // 토큰 선택 셀렉트 채우기: 현재는 로그인 토큰 1개만 존재하므로, "신규 등록"과 "로그인 토큰 사용" 두 옵션 제공
@@ -97,17 +96,26 @@ $(function () {
             });
         }
 
-        // 셀렉트 변경 시 UI 토글
-        sel.on("change", function () {
+        // 셀렉트 변경 시 UI 토글 및 UUID 반영
+        sel.off("change").on("change", function () {
           var v = $(this).val();
           var isNew = (v === "__new__");
           $("#fm-instance-id, #fm-instance-gen, #fm-register-btn").toggle(isNew);
           $("#fm-register-next").toggle(!isNew);
-          if (!isNew && v && v !== "__token__") {
-            // 기존 UUID 선택 시 그 값을 instanceId로 세팅
-            self.instanceId(v); $("#fm-instance-id").val(v);
+          if (isNew) {
+            // 신규 등록 선택 시마다 새 UUID 생성
+            var newId = genUuid();
+            self.instanceId(newId);
+            $("#fm-instance-id").val(newId);
+          } else if (v && v !== "__token__") {
+            // 기존 UUID 선택 시 해당 값 사용
+            self.instanceId(v);
+            $("#fm-instance-id").val(v);
           }
-        }).trigger("change");
+        });
+
+        // 기본값을 항상 신규로 설정하고 즉시 새 UUID 생성
+        sel.val("__new__").trigger("change");
 
         $("#fm-register-next").on("click", function () {
           // 기존 등록 선택 시 바로 3단계로 이동
@@ -484,3 +492,4 @@ $(function () {
     });
   });
   
+
