@@ -887,7 +887,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
                 "connection": self._printer.get_current_connection(),
                 "state": (self._printer.get_current_data() or {}).get("state"),
                 "registration": {
-                    "is_new": "true"
+                    "is_new": True
                 }
             }
             camera_info = {
