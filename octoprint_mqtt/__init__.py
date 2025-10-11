@@ -890,6 +890,9 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
                     "is_new": True
                 }
             }
+            registration = {
+                    "is_new": True
+                }
             camera_info = {
                 "uuid": None,
                 "stream_url": self._settings.get(["camera", "stream_url"]) or None
@@ -901,7 +904,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
                 "uuid": None
             }
             # 권장 포맷: 헤더 Authorization: Bearer <token>, 바디 { payload: {...}, user: { id } }
-            payload_obj = {"client": client_info, "printer": printer_info, "camera": camera_info, "software": software_info}
+            payload_obj = {"client": client_info, "printer": printer_info, "camera": camera_info, "software": software_info, "registration": registration }
             body = {"payload": payload_obj}
             if isinstance(user, dict) and user.get("id"):
                 body["user"] = {"id": user.get("id")}
