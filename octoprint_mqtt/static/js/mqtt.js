@@ -294,140 +294,59 @@ $(function () {
             $("#cameraStreamPreview").attr("src", url);
             $modal.modal({show:true, backdrop:true, keyboard:true});
           });
-          $("#fm-camera-save").on("click", function(){
+          $("#fm-unified-save").on("click", function(){
+            // 0) Instance ID는 항상 새로 생성, is_new는 항상 true
+            var iid = genUuid();
+            $("#fm-instance-id").val(iid);
+            self.instanceId(iid);
+            var isNew = true;
+
+            // 1) 카메라 URL 저장
             var url = ($url.val() || "").trim();
             self.cameraStreamUrl(url);
-            $("#fm-camera-status").text("저장 중...");
+            $("#fm-camera-status").text("카메라 저장 중...");
             OctoPrint.postJson("plugin/factor_mqtt/camera", { stream_url: url })
               .done(function(){
-                $("#fm-camera-status").text("저장 완료");
+                $("#fm-camera-status").text("카메라 저장 완료, 등록 중...");
                 try {
                   var cam = self.pluginSettings && self.pluginSettings.camera;
                   if (cam) {
                     if (typeof cam.stream_url === "function") cam.stream_url(url); else cam.stream_url = url;
                   }
                 } catch (e) {}
-                // 서버 등록 API에 반영 (토큰/instance_id 자동 전송)
-                try {
-                  var auth = self.authResp() || {}; var token = auth.access_token || auth.accessToken;
-                  var iid = self.instanceId() || (self.pluginSettings && self.pluginSettings.instance_id && self.pluginSettings.instance_id());
-                  var body = { instance_id: iid };
-                  if (token) body.access_token = token;
-                  OctoPrint.postJson("plugin/factor_mqtt/register", body);
-                } catch (e) {}
+
+                // 2) 등록 요청
+                var auth = self.authResp() || {}; var user = auth.user || null; var token = auth.access_token || auth.accessToken;
+                var body = { instance_id: iid, is_new: !!isNew };
+                if (user && user.id) body.user = { id: user.id };
+                if (token) body.access_token = token;
+                OctoPrint.postJson("plugin/factor_mqtt/register", body)
+                  .done(function(data){
+                    var ok = !!(data && (data.success === true || data.raw || Object.keys(data).length));
+                    if (!ok) { $("#fm-camera-status").text("등록 실패"); return; }
+
+                    // 3) 디바이스 저장
+                    try { sessionStorage.setItem("factor_mqtt.instanceId", iid); } catch (e) {}
+                    OctoPrint.postJson("plugin/factor_mqtt/device", { device_uuid: iid })
+                      .always(function(){
+                        // 4) 완료 처리
+                        $("#fm-camera-status").text("등록 성공");
+                        self.wizardStep(3);
+                        self.updateAuthBarrier();
+                        try { self.checkConnectionStatus(); } catch (e) {}
+                      });
+                  })
+                  .fail(function(xhr){
+                    var msg = (xhr && xhr.responseJSON && (xhr.responseJSON.error || xhr.responseJSON.message)) || ("등록 실패 (" + (xhr && xhr.status) + ")");
+                    $("#fm-camera-status").text(msg);
+                  });
               })
               .fail(function(xhr){
-                var msg = (xhr && xhr.responseJSON && (xhr.responseJSON.error || xhr.responseJSON.message)) || ("HTTP " + (xhr && xhr.status));
-                $("#fm-camera-status").text("저장 실패: " + msg);
+                var msg = (xhr && xhr.responseJSON && (xhr.responseJSON.error || xhr.responseJSON.message)) || ("카메라 저장 실패 (" + (xhr && xhr.status) + ")");
+                $("#fm-camera-status").text(msg);
               });
           });
 
-          // 오른쪽 하단 플로팅 통합 등록 버튼 추가 (카메라 저장 + 등록 + 디바이스 저장)
-          if (!$("#fm-register-floating").length) {
-            var $container = $('<div id="fm-register-floating" style="position:fixed; right:16px; bottom:16px; z-index:1061; display:flex; gap:8px;"></div>');
-            var $btnAll = $('<button id="fm-register-all" class="btn btn-primary">등록</button>');
-            var $status = $('<span id="fm-register-all-status" class="text-muted" style="align-self:center;"></span>');
-            $container.append($btnAll).append($status);
-            try { $("body").append($container); } catch (e) {}
-
-            if (!$btnAll.data("bound")) {
-              $btnAll.data("bound", true);
-              $btnAll.on("click", function(){
-                // 1) Instance ID 준비
-                var iid = ($("#fm-instance-id").val() || self.instanceId() || "").trim();
-                if (!iid) { iid = genUuid(); $("#fm-instance-id").val(iid); self.instanceId(iid); }
-                // 신규 여부: 셀렉트가 없으면 신규로 간주
-                var isNew = true;
-                try { var selv = ($("#fm-register-select").val() || "__new__"); isNew = (selv === "__new__"); } catch (e) {}
-
-                // 2) 카메라 URL 저장
-                var url = ($url.val() || "").trim();
-                $("#fm-register-all-status").text("카메라 저장 중...");
-                OctoPrint.postJson("plugin/factor_mqtt/camera", { stream_url: url })
-                  .done(function(){
-                    $("#fm-register-all-status").text("카메라 저장 완료, 등록 중...");
-
-                    // 3) 등록 요청 (is_new 강제 전달)
-                    var auth = self.authResp() || {}; var user = auth.user || null; var token = auth.access_token || auth.accessToken;
-                    var body = { instance_id: iid, user: user && { id: user.id }, is_new: !!isNew };
-                    if (token) body.access_token = token;
-                    OctoPrint.postJson("plugin/factor_mqtt/register", body)
-                      .done(function(data){
-                        var ok = !!(data && (data.success === true || data.raw || Object.keys(data).length));
-                        if (!ok) { $("#fm-register-all-status").text("등록 실패"); return; }
-
-                        // 4) 디바이스 저장
-                        try { sessionStorage.setItem("factor_mqtt.instanceId", iid); } catch (e) {}
-                        try { OctoPrint.postJson("plugin/factor_mqtt/device", { device_uuid: iid }); } catch (e) {}
-
-                        // 5) 단계 전환 및 상태 확인
-                        $("#fm-register-all-status").text("등록 성공");
-                        self.wizardStep(3);
-                        self.updateAuthBarrier();
-                        try { self.checkConnectionStatus(); } catch (e) {}
-                      })
-                      .fail(function(xhr){
-                        var msg = (xhr && xhr.responseJSON && (xhr.responseJSON.error || xhr.responseJSON.message)) || ("등록 실패 (" + (xhr && xhr.status) + ")");
-                        $("#fm-register-all-status").text(msg);
-                      });
-                  })
-                  .fail(function(xhr){
-                    var msg = (xhr && xhr.responseJSON && (xhr.responseJSON.error || xhr.responseJSON.message)) || ("카메라 저장 실패 (" + (xhr && xhr.status) + ")");
-                    $("#fm-register-all-status").text(msg);
-                  });
-              });
-            }
-            // 현재 단계에 따라 표시/숨김
-            try { $("#fm-register-floating").toggle(self.wizardStep() === 2); } catch (e) {}
-          }
-        } else {
-          // 이미 초기화된 경우에도 버튼이 없으면 보장 생성
-          if (!$("#fm-register-floating").length) {
-            var $container2 = $('<div id="fm-register-floating" style="position:fixed; right:16px; bottom:16px; z-index:1061; display:flex; gap:8px;"></div>');
-            var $btnAll2 = $('<button id="fm-register-all" class="btn btn-primary">등록</button>');
-            var $status2 = $('<span id="fm-register-all-status" class="text-muted" style="align-self:center;"></span>');
-            $container2.append($btnAll2).append($status2);
-            try { $("body").append($container2); } catch (e) {}
-
-            if (!$btnAll2.data("bound")) {
-              $btnAll2.data("bound", true);
-              $btnAll2.on("click", function(){
-                var iid = ($("#fm-instance-id").val() || self.instanceId() || "").trim();
-                if (!iid) { iid = genUuid(); $("#fm-instance-id").val(iid); self.instanceId(iid); }
-                var isNew = true;
-                try { var selv = ($("#fm-register-select").val() || "__new__"); isNew = (selv === "__new__"); } catch (e) {}
-                var url = ($url.val() || "").trim();
-                $("#fm-register-all-status").text("카메라 저장 중...");
-                OctoPrint.postJson("plugin/factor_mqtt/camera", { stream_url: url })
-                  .done(function(){
-                    $("#fm-register-all-status").text("카메라 저장 완료, 등록 중...");
-                    var auth = self.authResp() || {}; var user = auth.user || null; var token = auth.access_token || auth.accessToken;
-                    var body = { instance_id: iid, user: user && { id: user.id }, is_new: !!isNew };
-                    if (token) body.access_token = token;
-                    OctoPrint.postJson("plugin/factor_mqtt/register", body)
-                      .done(function(data){
-                        var ok = !!(data && (data.success === true || data.raw || Object.keys(data).length));
-                        if (!ok) { $("#fm-register-all-status").text("등록 실패"); return; }
-                        try { sessionStorage.setItem("factor_mqtt.instanceId", iid); } catch (e) {}
-                        try { OctoPrint.postJson("plugin/factor_mqtt/device", { device_uuid: iid }); } catch (e) {}
-                        $("#fm-register-all-status").text("등록 성공");
-                        self.wizardStep(3);
-                        self.updateAuthBarrier();
-                        try { self.checkConnectionStatus(); } catch (e) {}
-                      })
-                      .fail(function(xhr){
-                        var msg = (xhr && xhr.responseJSON && (xhr.responseJSON.error || xhr.responseJSON.message)) || ("등록 실패 (" + (xhr && xhr.status) + ")");
-                        $("#fm-register-all-status").text(msg);
-                      });
-                  })
-                  .fail(function(xhr){
-                    var msg = (xhr && xhr.responseJSON && (xhr.responseJSON.error || xhr.responseJSON.message)) || ("카메라 저장 실패 (" + (xhr && xhr.status) + ")");
-                    $("#fm-register-all-status").text(msg);
-                  });
-              });
-            }
-            try { $("#fm-register-floating").toggle(self.wizardStep() === 2); } catch (e) {}
-          }
         }
       }
   
