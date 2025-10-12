@@ -1,167 +1,89 @@
-# MQTT-Plugin from FACTOR
+# FACTOR × OctoPrint — 외부 모니터링 & 카메라 연동 (무료 베타)
 
+하루 종일 출력 돌려놓고 집에 오니 **스파게티/익스트루더 꼬임**…  
+그래서 **OctoPrint와 연동되는 외부 모니터링 플랫폼 ‘FACTOR’**를 만들었습니다.  
+**서버 비용 부담 오기 전까지 무료(약 300명 예상)** 로 공개합니다. 피드백 주시면 저녁에 빠르게 반영할게요 🙌
 
-옥토프린터용 MQTT 통합 플러그인입니다. 이 플러그인을 통해 옥토프린터의 상태 정보를 MQTT 브로커로 실시간 전송할 수 있습니다.
+[![status](https://img.shields.io/badge/status-beta-blue)]()
+[![platform](https://img.shields.io/badge/OctoPrint-plugin-green)]()
+[![license](https://img.shields.io/badge/license-MIT-lightgrey)]()
 
-## 주요 기능
+> 사이트: **https://factor.io.kr**  
+> 플러그인(zip): `https://github.com/kangbyounggwan/octoprint-factor-plugin/archive/main.zip`
 
-- **실시간 상태 전송**: 프린터 상태, 인쇄 진행률, 온도 정보를 MQTT로 전송
-- **G-code 명령 전송**: 프린터로 전송되는 G-code 명령을 MQTT로 전송
-- **유연한 설정**: 브로커 주소, 포트, 인증 정보, 토픽 접두사 등 자유롭게 설정
-- **QoS 지원**: MQTT QoS 레벨 설정 (0, 1, 2)
-- **메시지 유지**: Retain 플래그 설정으로 마지막 메시지 유지
-- **연결 테스트**: 설정 UI에서 MQTT 브로커 연결 테스트 가능
+---
 
-## 설치 방법
+## ✨ 핵심 기능
 
-### 1. 수동 설치
+- **실시간 모니터링**: 출력 진행/상태를 대시보드에서 확인
+- **카메라 연동**: 기존 스트림 URL(MJPEG/WebRTC/RTSP/HLS) 그대로 사용
+- **간단 연결**: 플러그인 설치 → 로그인 → 장비 등록 → 끝
+- **경량 통신**: MQTT 기반 상태 전송(브로커 호스트만 입력)
 
-```bash
-# 플러그인 디렉토리로 이동
-cd ~/.octoprint/plugins/
+---
 
-# 플러그인 클론
-git clone https://github.com/kangbyounggwan/octoprint-factor-plugin.git
+## ⚡ 빠른 설치(5–10분)
 
-# 플러그인 디렉토리로 이동
-cd octoprint-factor-plugin/
+> 스크린샷 예시는 `docs/` 폴더에 넣고 경로만 맞춰주세요.
 
-# 의존성 설치
-pip install -r requirements.txt
+### 1) 회원가입
 
-# 플러그인 설치
-pip install .
-```
+1. 접속: https://factor.io.kr  
+2. 우측 상단 **로그인** → 창에서 **회원가입**  
+3. 이메일·사용자명·비밀번호 입력 → **Sign Up**  
+4. 메일함의 **인증 링크 클릭** → 완료
 
-### 2. OctoPrint 플러그인 관리자를 통한 설치
+![step1](docs/step1.png)
 
-1. OctoPrint 웹 인터페이스에서 설정 > 플러그인 관리자로 이동
-2. "플러그인 추가" 버튼 클릭
-3. 플러그인 URL 입력: `https://github.com/kangbyounggwan/octoprint-factor-plugin/archive/main.zip`
-4. 설치 완료 후 OctoPrint 재시작
+---
 
-## 설정 방법
+### 2) 플러그인 설치 (OctoPrint)
 
-1. OctoPrint 웹 인터페이스에서 설정 > 플러그인으로 이동
-2. "MQTT-Plugin from FACTOR" 설정 페이지 열기
-3. MQTT 브로커 정보 입력:
-   - **브로커 호스트**: MQTT 브로커 주소 
-   - **브로커 포트**: MQTT 브로커 포트 (기본값: 1883)
-   - **사용자명/비밀번호**: 인증이 필요한 경우 입력
-   - **토픽 접두사**: 모든 토픽에 사용될 접두사 (기본값: octoprint)
+1. 우측 상단 **스패너(Settings)** → **Plugin Manager**  
+2. **Get More… → …from URL**  
+3. 아래 주소 붙여넣기 → **Install** → 완료 후 **OctoPrint 재시작**
+![step2](docs/step2.png)  
+![step3_install](docs/step3_install.png)
 
-4. 발행 설정 구성:
-   - **QoS 레벨**: 메시지 전달 품질 보장 레벨
-   - **메시지 유지**: 브로커가 마지막 메시지를 유지할지 설정
-   - **발행할 이벤트**: 전송할 이벤트 유형 선택
+---
 
-5. "연결 테스트" 버튼으로 설정 확인
-6. 설정 저장
+### 3) 플러그인 실행 (로그인)
 
-## MQTT 토픽 구조
+- 좌측 메뉴 **FACTOR MQTT** 열기 → **이메일/비밀번호 로그인**
 
-플러그인은 다음과 같은 토픽 구조로 메시지를 전송합니다:
+![step4_login](docs/step4_login.png)
 
-```
-{토픽_접두사}/status      # 프린터 상태 변경
-{토픽_접두사}/progress    # 인쇄 진행률
-{토픽_접두사}/temperature # 온도 정보
-{토픽_접두사}/gcode       # G-code 명령
-```
+---
 
-### 예시 토픽
+### 4) 등록 & 연결
 
-```
-octoprint/status
-octoprint/progress
-octoprint/temperature
-octoprint/gcode
-```
+1. **프린터 연동**: `신규 등록` 그대로 두고 **생성** → 장비 정보 확인  
+2. **카메라 연동(선택)**: 기존 Classic Webcam 등에서 쓰던 **스트림 URL 입력** → **저장**  
+   - 예) `http://<라즈베리IP>:8080/stream` (MJPEG)  
+   - WebRTC/RTSP/HLS 예시:
+     - WebRTC: `http://<도메인 또는 IP>:8889/<카메라이름>`
+     - RTSP: `rtsp://<도메인 또는 IP>:8554/<카메라이름>`
+     - HLS: `http://<도메인 또는 IP>:8888/<스트림>.m3u8`
+3. **MQTT 설정**:  
+   - 브로커 호스트: `factor.io.kr` / 포트: `1883`  
+   - **연결 테스트** → “연결됨” 확인 후 **Save**
+4. 우측 **등록** 버튼으로 마무리
 
-## 메시지 형식
+![step4_register](docs/step4_register.png)  
+![step4_mqtt](docs/step4_mqtt.png)
 
-모든 메시지는 JSON 형식으로 전송됩니다.
+---
 
-### 상태 메시지 예시
+## 🔧 환경/설정 팁
 
-```json
-{
-  "state_id": "OPERATIONAL",
-  "state_string": "Operational"
-}
-```
-
-### 진행률 메시지 예시
-
-```json
-{
-  "completion": 45.2,
-  "filepos": 1234567,
-  "printTime": 1800,
-  "printTimeLeft": 2200
-}
-```
-
-### 온도 메시지 예시
-
-```json
-{
-  "tool0": {
-    "actual": 210.5,
-    "target": 220.0,
-    "offset": 0
-  },
-  "bed": {
-    "actual": 60.0,
-    "target": 60.0,
-    "offset": 0
-  }
-}
-```
-
-## 요구사항
-
-- OctoPrint 1.4.0 이상
-- Python 3.7 이상
-- paho-mqtt 1.5.0 이상
-
-## 문제 해결
-
-### 연결 문제
-
-1. **브로커 주소 확인**: 올바른 IP 주소나 호스트명을 입력했는지 확인
-2. **포트 확인**: 방화벽이나 네트워크 설정에서 포트가 차단되지 않았는지 확인
-3. **인증 정보**: 사용자명과 비밀번호가 올바른지 확인
-4. **MQTT 브로커 상태**: MQTT 브로커가 실행 중인지 확인
-
-### 메시지 전송 문제
-
-1. **QoS 설정**: 네트워크 환경에 맞는 QoS 레벨 설정
-2. **토픽 접두사**: 특수문자나 공백이 없는지 확인
-3. **로그 확인**: OctoPrint 로그에서 오류 메시지 확인
-
-## 개발자 정보
-
-- **개발자**: FACTOR
-- **이메일**: factor@example.com
-- **GitHub**: https://github.com/kangbyounggwan/octoprint-factor-plugin
-
-## 라이선스
-
-이 프로젝트는 AGPLv3 라이선스 하에 배포됩니다.
-
-## 기여하기
-
-1. 이 저장소를 포크합니다
-2. 새로운 기능 브랜치를 생성합니다 (`git checkout -b feature/amazing-feature`)
-3. 변경사항을 커밋합니다 (`git commit -m 'Add some amazing feature'`)
-4. 브랜치에 푸시합니다 (`git push origin feature/amazing-feature`)
-5. Pull Request를 생성합니다
-
-## 변경 로그
-
-### v1.0.3
-- 초기 릴리스
-- 기본 MQTT 통합 기능
-- 프린터 상태, 진행률, 온도, G-code 전송
-- 설정 UI 및 연결 테스트 기능
+- **브라우저 보안**: HTTPS 페이지에서 **비보안(MJPEG/RTSP 등)** 스트림은 차단될 수 있어 **HTTPS/WSS** 권장  
+- **Supabase 인증 리다이렉트**:
+  - 대시보드: *Authentication → URL Configuration*  
+  - **Site URL**: `https://factor.io.kr`  
+  - **Additional Redirect URLs**: `https://factor.io.kr/auth/callback` 등 실제 콜백 경로 추가
+- **코드에서 이메일 인증 링크 지정(선택)**:
+  ```ts
+  const { data, error } = await supabase.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+  });
