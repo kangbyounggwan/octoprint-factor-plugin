@@ -53,41 +53,39 @@
 
 ### 3) 플러그인 실행 (로그인)
 
+![step4_login](docs/3단계.png)
+
 - 좌측 메뉴 **FACTOR MQTT** 열기 → **이메일/비밀번호 로그인**
 
-![step4_login](docs/step4_login.png)
+
 
 ---
 
 ### 4) 등록 & 연결
 
+
+![step4_register](docs/3-1단계.png)  
+
 1. **프린터 연동**: `신규 등록` 그대로 두고 **생성** → 장비 정보 확인  
 2. **카메라 연동(선택)**: 기존 Classic Webcam 등에서 쓰던 **스트림 URL 입력** → **저장**  
    - 예) `http://<라즈베리IP>:8080/stream` (MJPEG)  
-   - WebRTC/RTSP/HLS 예시:
-     - WebRTC: `http://<도메인 또는 IP>:8889/<카메라이름>`
-     - RTSP: `rtsp://<도메인 또는 IP>:8554/<카메라이름>`
-     - HLS: `http://<도메인 또는 IP>:8888/<스트림>.m3u8`
+
+![step4_mqtt](docs/3-2단계.png)
 3. **MQTT 설정**:  
    - 브로커 호스트: `factor.io.kr` / 포트: `1883`  
    - **연결 테스트** → “연결됨” 확인 후 **Save**
 4. 우측 **등록** 버튼으로 마무리
+ 
 
-![step4_register](docs/step4_register.png)  
-![step4_mqtt](docs/step4_mqtt.png)
 
 ---
 
 ## 🔧 환경/설정 팁
+
+![step4_mqtt](docs/결과.png)
 
 - **브라우저 보안**: HTTPS 페이지에서 **비보안(MJPEG/RTSP 등)** 스트림은 차단될 수 있어 **HTTPS/WSS** 권장  
 - **Supabase 인증 리다이렉트**:
   - 대시보드: *Authentication → URL Configuration*  
   - **Site URL**: `https://factor.io.kr`  
   - **Additional Redirect URLs**: `https://factor.io.kr/auth/callback` 등 실제 콜백 경로 추가
-- **코드에서 이메일 인증 링크 지정(선택)**:
-  ```ts
-  const { data, error } = await supabase.auth.signInWithOtp({
-    email,
-    options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
-  });
