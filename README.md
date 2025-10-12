@@ -64,13 +64,15 @@
 ### 4) 등록 & 연결
 
 
-![step4_register](docs/3-1단계.png)  
+![step4_register](docs/3-1단계.png)
+
 
 1. **프린터 연동**: `신규 등록` 그대로 두고 **생성** → 장비 정보 확인  
 2. **카메라 연동(선택)**: 기존 Classic Webcam 등에서 쓰던 **스트림 URL 입력** → **저장**  
    - 예) `http://<라즈베리IP>:8080/stream` (MJPEG)  
 
-![step4_mqtt](docs/3-2단계.png)
+![step4_mqtt](docs/3-2단계.png) 
+
 3. **MQTT 설정**:  
    - 브로커 호스트: `factor.io.kr` / 포트: `1883`  
    - **연결 테스트** → “연결됨” 확인 후 **Save**
