@@ -24,7 +24,8 @@
 
 ## ⚡ 빠른 설치(5–10분)
 
-> 스크린샷 예시는 `docs/` 폴더에 넣고 경로만 맞춰주세요.
+
+![step1](docs/1단계.png)
 
 ### 1) 회원가입
 
@@ -33,17 +34,20 @@
 3. 이메일·사용자명·비밀번호 입력 → **Sign Up**  
 4. 메일함의 **인증 링크 클릭** → 완료
 
-![step1](docs/1단계.png)
+
 
 ---
+![step2](docs/2단계.png)  
 
 ### 2) 플러그인 설치 (OctoPrint)
 
 1. 우측 상단 **스패너(Settings)** → **Plugin Manager**  
 2. **Get More… → …from URL**  
+
+![step3_install](docs/2-1단계.png)
 3. 아래 주소 붙여넣기 → **Install** → 완료 후 **OctoPrint 재시작**
-![step2](docs/step2.png)  
-![step3_install](docs/step3_install.png)
+**플러그인(zip): `https://github.com/kangbyounggwan/octoprint-factor-plugin/archive/main.zip`**
+
 
 ---
 
