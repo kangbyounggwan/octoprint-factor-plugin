@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![FACTOR Logo](https://via.placeholder.com/150x150.png?text=FACTOR)
+<img src="docs/logo.png" alt="FACTOR Logo" width="150"/>
 
 **3D 프린터를 어디서든 모니터링하세요**
 
@@ -32,8 +32,6 @@
   - [2단계: 플러그인 설치](#2단계-플러그인-설치)
   - [3단계: 로그인 및 장비 등록](#3단계-로그인-및-장비-등록)
   - [4단계: MQTT 연결](#4단계-mqtt-연결)
-- [환경 설정](#-환경-설정)
-- [보안 설정](#-보안-설정)
 - [문제 해결](#-문제-해결)
 - [기여하기](#-기여하기)
 - [라이선스](#-라이선스)
@@ -209,72 +207,6 @@
 **🎉 설치 완료! 이제 웹사이트에서 프린터를 모니터링하세요.**
 
 </div>
-
----
-
-## ⚙️ 환경 설정
-
-### MQTT 고급 설정
-
-```yaml
-# TLS/SSL 암호화 (권장)
-broker_use_tls: true
-broker_port: 8883
-
-# 인증서 검증 (프로덕션)
-broker_tls_insecure: false
-broker_tls_ca_cert: /path/to/ca.crt
-
-# QoS 레벨
-qos_level: 1  # 0: 최대 1회, 1: 최소 1회, 2: 정확히 1회
-
-# 주기적 상태 전송 간격 (초)
-periodic_interval: 1.0
-```
-
-### 카메라 스트림 URL 예시
-
-| 유형 | URL 예시 |
-|------|----------|
-| **MJPEG** | `http://192.168.1.100:8080/stream` |
-| **WebRTC** | `https://factor.io.kr/webrtc/cam1/` |
-| **RTSP** | `rtsp://192.168.1.100:8554/stream` |
-| **USB 카메라** | `/dev/video0` (Linux) |
-
----
-
-## 🔐 보안 설정
-
-### 1. MQTT TLS/SSL 활성화
-
-```bash
-# 브로커 호스트
-factor.io.kr
-
-# TLS 포트 사용
-8883
-
-# 설정에서 TLS 체크박스 활성화
-✅ TLS/SSL 사용
-```
-
-### 2. 방화벽 설정
-
-```bash
-# MQTT 포트 열기 (Linux)
-sudo ufw allow 1883/tcp  # 평문
-sudo ufw allow 8883/tcp  # TLS
-
-# 또는 특정 IP만 허용
-sudo ufw allow from 192.168.1.0/24 to any port 1883
-```
-
-### 3. 네트워크 보안
-
-- ✅ HTTPS로 웹사이트 접속
-- ✅ 강력한 비밀번호 사용
-- ✅ 정기적인 플러그인 업데이트
-- ⚠️ 공개 네트워크에서는 TLS 필수
 
 ---
 

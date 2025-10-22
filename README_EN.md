@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![FACTOR Logo](https://via.placeholder.com/150x150.png?text=FACTOR)
+<img src="docs/logo.png" alt="FACTOR Logo" width="150"/>
 
 **Monitor Your 3D Printer from Anywhere**
 
@@ -32,8 +32,6 @@ That's why we created **FACTOR** - an external monitoring platform that integrat
   - [Step 2: Install Plugin](#step-2-install-plugin)
   - [Step 3: Login & Register Device](#step-3-login--register-device)
   - [Step 4: Configure MQTT](#step-4-configure-mqtt)
-- [Configuration](#-configuration)
-- [Security](#-security)
 - [Troubleshooting](#-troubleshooting)
 - [Contributing](#-contributing)
 - [License](#-license)
@@ -209,72 +207,6 @@ That's why we created **FACTOR** - an external monitoring platform that integrat
 **🎉 Setup Complete! Now monitor your printer from the website.**
 
 </div>
-
----
-
-## ⚙️ Configuration
-
-### Advanced MQTT Settings
-
-```yaml
-# TLS/SSL Encryption (Recommended)
-broker_use_tls: true
-broker_port: 8883
-
-# Certificate Verification (Production)
-broker_tls_insecure: false
-broker_tls_ca_cert: /path/to/ca.crt
-
-# QoS Level
-qos_level: 1  # 0: At most once, 1: At least once, 2: Exactly once
-
-# Periodic Status Interval (seconds)
-periodic_interval: 1.0
-```
-
-### Camera Stream URL Examples
-
-| Type | Example URL |
-|------|-------------|
-| **MJPEG** | `http://192.168.1.100:8080/stream` |
-| **WebRTC** | `https://factor.io.kr/webrtc/cam1/` |
-| **RTSP** | `rtsp://192.168.1.100:8554/stream` |
-| **USB Camera** | `/dev/video0` (Linux) |
-
----
-
-## 🔐 Security
-
-### 1. Enable MQTT TLS/SSL
-
-```bash
-# Broker Host
-factor.io.kr
-
-# Use TLS Port
-8883
-
-# Enable TLS checkbox in settings
-✅ Use TLS/SSL
-```
-
-### 2. Firewall Configuration
-
-```bash
-# Open MQTT ports (Linux)
-sudo ufw allow 1883/tcp  # Plain
-sudo ufw allow 8883/tcp  # TLS
-
-# Or allow specific IP only
-sudo ufw allow from 192.168.1.0/24 to any port 1883
-```
-
-### 3. Network Security
-
-- ✅ Access website via HTTPS
-- ✅ Use strong passwords
-- ✅ Keep plugin updated regularly
-- ⚠️ TLS is mandatory on public networks
 
 ---
 
