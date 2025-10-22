@@ -5,12 +5,13 @@ $(function () {
     // [AUTH ADD] 설정: 실제 서버 주소로 교체하세요
     var AUTH_URL = "plugin/factor_mqtt/auth/login";
 
-    // [AUTH ADD] 상태 저장
-    self.isAuthed = ko.observable(!!sessionStorage.getItem("factor_mqtt.auth"));
-    self.authResp = ko.observable(self.isAuthed() ? JSON.parse(sessionStorage.getItem("factor_mqtt.auth")) : null);
+    // [AUTH ADD] 상태 저장 (서버 세션 기반, sessionStorage는 임시 UI 상태용)
+    // 보안: 토큰은 서버 측에만 저장되며, 클라이언트는 세션 쿠키로만 인증
+    self.isAuthed = ko.observable(false);
+    self.authResp = ko.observable(null);
     // [WIZARD] 단계 및 인스턴스ID
     self.wizardStep = ko.observable(1); // 1: 로그인, 2: 등록, 3: MQTT 설정
-    self.instanceId = ko.observable(sessionStorage.getItem("factor_mqtt.instanceId") || "");
+    self.instanceId = ko.observable("");
 
     // [AUTH ADD] 공용 가드: 입력/저장 비활성화
     function setInputsDisabled(disabled) {
@@ -37,7 +38,8 @@ $(function () {
           .done(function (data) {
             var ok = !!(data && (data.success === true || (!data.error && (data.user || data.session))));
             if (ok) {
-              sessionStorage.setItem("factor_mqtt.auth", JSON.stringify(data));
+              // 보안: 민감정보는 sessionStorage에 저장하지 않음
+              // 서버 세션에만 저장하고, UI 상태만 메모리에 유지
               self.authResp(data); self.isAuthed(true);
               self.wizardStep(2);
               self.renderRegisterTab();
@@ -163,8 +165,8 @@ $(function () {
           OctoPrint.postJson("plugin/factor_mqtt/register", body)
             .done(function (data) {
               if (data && (data.success === true || data.raw || Object.keys(data).length)) {
-                $("#fm-register-status").text("등록 성공"); sessionStorage.setItem("factor_mqtt.instanceId", iid);
-                // 서버에 저장 요청
+                $("#fm-register-status").text("등록 성공");
+                // 서버에 저장 요청 (보안: sessionStorage 사용하지 않음)
                 try {
                   OctoPrint.postJson("plugin/factor_mqtt/device", { device_uuid: iid });
                 } catch (e) {}
@@ -206,7 +208,7 @@ $(function () {
 
       // 로그인/마법사 초기화 유틸 (모달 열릴 때마다 1. 로그인으로 강제)
       function resetWizardToLogin() {
-        try { sessionStorage.removeItem("factor_mqtt.auth"); } catch (e) {}
+        // 보안: sessionStorage 사용하지 않음
         self.isAuthed(false);
         self.authResp(null);
         self.wizardStep(1);
@@ -265,7 +267,7 @@ $(function () {
         OctoPrint.ajax("GET", "plugin/factor_mqtt/status")
           .done(function (r) {
             var registered = !!(r && r.registered);
-            var iid = (r && r.instance_id) || sessionStorage.getItem("factor_mqtt.instanceId") || "";
+            var iid = (r && r.instance_id) || "";
             if (iid) { self.instanceId(iid); }
             if (!authed) {
               self.wizardStep(1);
@@ -285,10 +287,10 @@ $(function () {
             if (!authed) {
               self.wizardStep(1);
             } else {
-              // 상태 실패 시 등록여부를 로컬 기준으로 추정
-              var registered = !!sessionStorage.getItem("factor_mqtt.instanceId");
-              self.wizardStep(registered ? 3 : 2);
-              if (!registered) { self.renderRegisterOverlay(); setTimeout(bindCameraSection, 0); }
+              // 상태 실패 시 등록여부는 서버 상태로만 결정
+              self.wizardStep(2);
+              self.renderRegisterTab();
+              setTimeout(bindCameraSection, 0);
             }
             self.updateAuthBarrier();
             self.checkConnectionStatus();

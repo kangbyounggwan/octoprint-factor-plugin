@@ -1,0 +1,90 @@
+{
+  "ui": {
+    "title": "FACTOR MQTT",
+    "login": {
+      "title": "Login",
+      "email": "Email",
+      "password": "Password",
+      "button": "Login",
+      "status": "Logging in...",
+      "error": "Please enter Email and Password",
+      "failed": "Login failed"
+    },
+    "register": {
+      "title": "Device Registration",
+      "select": "Select Device",
+      "new": "New Registration",
+      "instanceId": "Instance ID",
+      "generate": "Generate",
+      "create": "Create",
+      "next": "Next",
+      "status": "Registering...",
+      "error": "Please enter/generate Instance ID",
+      "success": "Registration successful",
+      "failed": "Registration failed",
+      "connection": {
+        "title": "Printer Connection Info",
+        "none": "No printer connection information available"
+      }
+    },
+    "camera": {
+      "title": "Camera Settings",
+      "url": "Stream URL",
+      "test": "Test",
+      "save": "Save",
+      "status": {
+        "saving": "Saving...",
+        "success": "Saved successfully",
+        "failed": "Save failed",
+        "urlRequired": "Please enter URL"
+      }
+    },
+    "mqtt": {
+      "title": "MQTT Settings",
+      "broker": {
+        "host": "Broker Host",
+        "port": "Port",
+        "username": "Username (Optional)",
+        "password": "Password (Optional)"
+      },
+      "tls": {
+        "enable": "Use TLS/SSL",
+        "insecure": "Skip Certificate Verification",
+        "caCert": "CA Certificate Path"
+      },
+      "topic": "Topic Prefix",
+      "qos": "QoS Level",
+      "retain": "Retain Messages",
+      "publish": {
+        "status": "Publish Status",
+        "progress": "Publish Progress",
+        "temperature": "Publish Temperature",
+        "gcode": "Publish G-code",
+        "snapshot": "Publish Snapshot"
+      },
+      "interval": "Status Interval (seconds)",
+      "test": "Connection Test",
+      "save": "Save",
+      "register": "Register",
+      "status": {
+        "testing": "Testing connection...",
+        "success": "Connection test successful!",
+        "failed": "Connection test failed",
+        "connected": "Connected to MQTT broker",
+        "disconnected": "Not connected to MQTT broker",
+        "checking": "Checking connection...",
+        "needLogin": "Login required",
+        "needRegister": "Please complete registration"
+      }
+    },
+    "tabs": {
+      "login": "1. Login",
+      "register": "2. Register",
+      "mqtt": "3. MQTT Settings"
+    },
+    "messages": {
+      "saveAfterStep3": "You can save after completing Step 3 (Registration).",
+      "loginRequired": "Please login before saving."
+    }
+  }
+}

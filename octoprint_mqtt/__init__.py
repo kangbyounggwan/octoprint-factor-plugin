@@ -52,11 +52,15 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         self.mqtt_client = None
         self.is_connected = False
         self._snapshot_timer = None
+        self._snapshot_timer_lock = __import__("threading").Lock()
         self._gcode_jobs = {}
         # camera process state
         self._camera_proc = None
         self._camera_started_at = None
         self._camera_last_error = None
+        # security: rate limiting for login attempts
+        self._login_attempts = {}
+        self._login_attempt_lock = __import__("threading").Lock()
     
     ##~~ SettingsPlugin mixin
     
@@ -66,6 +70,9 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             broker_port=1883,
             broker_username="",
             broker_password="",
+            broker_use_tls=False,
+            broker_tls_insecure=False,
+            broker_tls_ca_cert="",
             topic_prefix="octoprint",   # JS와 일치!
             qos_level=0,
             retain_messages=False,
@@ -86,7 +93,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             camera=dict(
                 stream_url=""
             )
-            
+
         )
     
     def get_settings_version(self):
@@ -99,10 +106,10 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         # 타이머는 연결 성공 시 자동으로 시작됨
     
     ##~~ AssetPlugin mixin
-    
+
     def get_assets(self):
         return dict(
-            js=["js/mqtt.js"],
+            js=["js/i18n.js", "js/mqtt.js"],
             css=["css/mqtt.css"]
         )
     
@@ -178,34 +185,54 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
     def _connect_mqtt(self):
         try:
             import paho.mqtt.client as mqtt
-            
+            import ssl
+
             self.mqtt_client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
-            
+
             # 인증 정보 설정
             username = self._settings.get(["broker_username"])
             password = self._settings.get(["broker_password"])
             if username:
                 self.mqtt_client.username_pw_set(username, password)
-            
+
+            # TLS/SSL 설정
+            use_tls = self._settings.get(["broker_use_tls"])
+            if use_tls:
+                tls_insecure = self._settings.get(["broker_tls_insecure"])
+                ca_cert = self._settings.get(["broker_tls_ca_cert"])
+
+                tls_context = ssl.create_default_context()
+                if tls_insecure:
+                    tls_context.check_hostname = False
+                    tls_context.verify_mode = ssl.CERT_NONE
+                    self._logger.warning("MQTT TLS 인증서 검증이 비활성화되었습니다. 프로덕션 환경에서는 권장하지 않습니다.")
+                elif ca_cert:
+                    tls_context.load_verify_locations(cafile=ca_cert)
+
+                self.mqtt_client.tls_set_context(tls_context)
+                self._logger.info("MQTT TLS/SSL이 활성화되었습니다.")
+
             # 콜백 함수 설정
             self.mqtt_client.on_connect = self._on_mqtt_connect
             self.mqtt_client.on_disconnect = self._on_mqtt_disconnect
             self.mqtt_client.on_publish = self._on_mqtt_publish
             self.mqtt_client.on_log = self._on_mqtt_log
             self.mqtt_client.on_message = self._on_mqtt_message
-            
+
             # 재연결 설정
             self.mqtt_client.reconnect_delay_set(min_delay=1, max_delay=120)
-            
+
             # 비동기 연결
             host = self._settings.get(["broker_host"])
             port = int(self._settings.get(["broker_port"]))
-            self._logger.info(f"MQTT 비동기 연결 시도: {host}:{port}")
-            
+            protocol = "mqtts" if use_tls else "mqtt"
+            # 사용자명은 로그에 표시하지 않음 (보안)
+            self._logger.info(f"MQTT 비동기 연결 시도: {protocol}://{host}:{port}")
+
             # connect_async로 비동기 연결 시작
             self.mqtt_client.connect_async(host, port, 60)
             self.mqtt_client.loop_start()
-            
+
         except Exception as e:
             self._logger.error(f"MQTT 연결 실패: {e}")
     
@@ -419,8 +446,8 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
                 self._gcode_jobs.pop(job_id, None)
             if expired:
                 self._logger.warning(f"[FACTOR MQTT] 만료된 job 정리: {expired}")
-        except Exception:
-            pass
+        except Exception as e:
+            self._logger.error(f"[FACTOR MQTT] job 정리 중 오류: {e}")
     
     def _check_mqtt_connection_status(self):
         """MQTT 연결 상태를 확인합니다."""
@@ -522,14 +549,39 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         # 기본값: 소프트웨어 인코더
         return ["-c:v", "libx264", "-tune", "zerolatency"]
 
+    def _validate_url(self, url: str) -> bool:
+        """Validate URL to prevent command injection."""
+        if not url:
+            return False
+        # Allow only safe protocols
+        if not re.match(r'^(http://|https://|rtsp://|/dev/video\d+)', url):
+            return False
+        # Prevent command injection characters
+        dangerous_chars = [';', '&', '|', '`', '$', '(', ')', '<', '>', '\n', '\r']
+        for char in dangerous_chars:
+            if char in url:
+                return False
+        # Reasonable length
+        if len(url) > 2048:
+            return False
+        return True
+
     def _build_webrtc_mediatx_cmd(self, opts: dict):
         input_url = (opts.get("input") or opts.get("input_url") or
                      self._settings.get(["camera", "stream_url"]) or "").strip()
         if not input_url:
             raise ValueError("missing input url")
 
+        # Validate input URL to prevent command injection
+        if not self._validate_url(input_url):
+            raise ValueError("invalid or potentially dangerous input URL")
+
         # 스트림 이름 & 서버 주소
         name = (opts.get("name") or "cam").strip()
+        # Validate stream name (alphanumeric + underscore only)
+        if not re.match(r'^[a-zA-Z0-9_]+$', name) or len(name) > 50:
+            raise ValueError("invalid stream name")
+
         rtsp_base = (opts.get("rtsp_base")
                      or os.environ.get("MEDIAMTX_RTSP_BASE")
                      or "rtsp://factor.io.kr:8554").rstrip("/")
@@ -537,14 +589,24 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
                        or os.environ.get("MEDIAMTX_WEBRTC_BASE")
                        or "https://factor.io.kr/webrtc").rstrip("/")
 
+        # Validate server URLs
+        if not self._validate_url(rtsp_base):
+            raise ValueError("invalid rtsp_base URL")
+        if not self._validate_url(webrtc_base):
+            raise ValueError("invalid webrtc_base URL")
+
         rtsp_url = f"{rtsp_base}/{name}"
 
-        # 화질/프레임/비트레이트
-        fps       = self._safe_int(opts.get("fps", 0))
-        width     = self._safe_int(opts.get("width", 0))
-        height    = self._safe_int(opts.get("height", 0))
-        bitrate_k = self._safe_int(opts.get("bitrateKbps", 2000))
+        # 화질/프레임/비트레이트 (범위 검증 추가)
+        fps       = max(0, min(60, self._safe_int(opts.get("fps", 0))))  # 0-60
+        width     = max(0, min(3840, self._safe_int(opts.get("width", 0))))  # 0-3840 (4K)
+        height    = max(0, min(2160, self._safe_int(opts.get("height", 0))))  # 0-2160 (4K)
+        bitrate_k = max(100, min(20000, self._safe_int(opts.get("bitrateKbps", 2000))))  # 100-20000 kbps
         encoder   = (opts.get("encoder") or "v4l2m2m")
+        # Validate encoder option (whitelist)
+        allowed_encoders = ["v4l2m2m", "h264_v4l2m2m", "v4l2", "omx", "h264_omx", "libx264"]
+        if encoder not in allowed_encoders:
+            encoder = "v4l2m2m"
         low_lat   = self._safe_bool(opts.get("lowLatency", True))
         force_mj  = self._safe_bool(opts.get("forceMjpeg", False))
 
@@ -642,13 +704,21 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             else:
                 cmd, extra = built, {}
 
-            # 라즈베리(리눅스) 기준 프로세스 그룹 생성해서 종료 간편화
-            self._camera_proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.STDOUT,
-                preexec_fn=os.setsid
-            )
+            # 플랫폼별 프로세스 그룹 설정
+            import sys
+            popen_kwargs = {
+                "stdout": subprocess.DEVNULL,
+                "stderr": subprocess.STDOUT
+            }
+
+            # Unix/Linux: 프로세스 그룹 생성
+            if sys.platform != "win32" and hasattr(os, "setsid"):
+                popen_kwargs["preexec_fn"] = os.setsid
+            # Windows: CREATE_NEW_PROCESS_GROUP 플래그 사용
+            elif sys.platform == "win32":
+                popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+
+            self._camera_proc = subprocess.Popen(cmd, **popen_kwargs)
             self._webrtc_last = extra or {}
             self._camera_started_at = time.time()
             self._camera_last_error = None
@@ -664,15 +734,44 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         try:
             if not (self._camera_proc and self._camera_proc.poll() is None):
                 return {"success": True, "already_stopped": True, **self._camera_status()}
-            pgid = os.getpgid(self._camera_proc.pid)
-            os.killpg(pgid, signal.SIGTERM)
-            t0 = time.time()
-            while (time.time() - t0) < timeout_sec:
-                if self._camera_proc.poll() is not None:
-                    break
-                time.sleep(0.1)
-            if self._camera_proc.poll() is None:
-                os.killpg(pgid, signal.SIGKILL)
+
+            import sys
+
+            # 플랫폼별 프로세스 종료
+            if sys.platform == "win32":
+                # Windows: CTRL_BREAK_EVENT 시그널 전송
+                try:
+                    self._camera_proc.send_signal(signal.CTRL_BREAK_EVENT)
+                except AttributeError:
+                    self._camera_proc.terminate()
+
+                t0 = time.time()
+                while (time.time() - t0) < timeout_sec:
+                    if self._camera_proc.poll() is not None:
+                        break
+                    time.sleep(0.1)
+                if self._camera_proc.poll() is None:
+                    self._camera_proc.kill()
+            else:
+                # Unix/Linux: 프로세스 그룹에 시그널 전송
+                try:
+                    pgid = os.getpgid(self._camera_proc.pid)
+                    os.killpg(pgid, signal.SIGTERM)
+                except (OSError, AttributeError):
+                    # Fallback: 개별 프로세스 종료
+                    self._camera_proc.terminate()
+
+                t0 = time.time()
+                while (time.time() - t0) < timeout_sec:
+                    if self._camera_proc.poll() is not None:
+                        break
+                    time.sleep(0.1)
+                if self._camera_proc.poll() is None:
+                    try:
+                        os.killpg(pgid, signal.SIGKILL)
+                    except (OSError, AttributeError):
+                        self._camera_proc.kill()
+
             self._logger.info("[CAMERA] ffmpeg stopped")
             return {"success": True, **self._camera_status()}
         except Exception as e:
@@ -810,16 +909,47 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
                 pass
         return iid
 
+    def _check_rate_limit(self, key: str, max_attempts: int = 5, window_sec: int = 300) -> bool:
+        """Rate limiting check. Returns True if rate limit exceeded."""
+        now = time.time()
+        with self._login_attempt_lock:
+            if key not in self._login_attempts:
+                self._login_attempts[key] = []
+
+            # Clean old attempts outside window
+            self._login_attempts[key] = [t for t in self._login_attempts[key] if now - t < window_sec]
+
+            # Check if limit exceeded
+            if len(self._login_attempts[key]) >= max_attempts:
+                return True
+
+            # Record this attempt
+            self._login_attempts[key].append(now)
+            return False
+
     ##~~ BlueprintPlugin mixin
-    
+
     @octoprint.plugin.BlueprintPlugin.route("/auth/login", methods=["POST"])
     def auth_login(self):
         try:
+            # Rate limiting by IP
+            client_ip = request.remote_addr or "unknown"
+            if self._check_rate_limit(f"login:{client_ip}", max_attempts=5, window_sec=300):
+                self._logger.warning(f"Login rate limit exceeded for IP: {client_ip}")
+                return make_response(jsonify({"error": "Too many login attempts. Please try again later."}), 429)
+
             data = request.get_json(force=True) or {}
             email = (data.get("email") or "").strip()
             password = data.get("password") or ""
             if not email or not password:
                 return make_response(jsonify({"error": "email and password required"}), 400)
+
+            # Input validation
+            if len(email) > 255 or len(password) > 255:
+                return make_response(jsonify({"error": "Invalid input length"}), 400)
+
+            if not re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", email):
+                return make_response(jsonify({"error": "Invalid email format"}), 400)
 
             api_base = (self._settings.get(["auth_api_base"])).rstrip("/")
             if not re.match(r"^https?://", api_base):
@@ -834,7 +964,8 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             out = (resp.json() if is_json else {"raw": resp.text})
             return make_response(jsonify(out), resp.status_code)
         except Exception as e:
-            return make_response(jsonify({"error": str(e)}), 500)
+            self._logger.error(f"Login error: {e}")
+            return make_response(jsonify({"error": "Internal server error"}), 500)
 
     @octoprint.plugin.BlueprintPlugin.route("/summary", methods=["GET"])
     def proxy_printers_summary(self):
@@ -1104,8 +1235,9 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         do_publish = bool(data.get("publish", False))
         topic = data.get("test_topic") or f"{self._settings.get(['topic_prefix']) or 'octoprint'}/test"
 
-        self._logger.info("[TEST] MQTT 연결 테스트 시작 host=%s port=%s user=%s pw=%s publish=%s topic=%s",
-                        host, port, (username or "<none>"), ("***" if pw else "<none>"), do_publish, topic)
+        # 비밀번호는 절대 로그에 표시하지 않음
+        self._logger.info("[TEST] MQTT 연결 테스트 시작 host=%s port=%s user=%s publish=%s topic=%s",
+                        host, port, (username or "<none>"), do_publish, topic)
 
         client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
         try:
@@ -1287,19 +1419,21 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
 
     def _start_snapshot_timer(self):
         """스냅샷 전송 타이머를 시작합니다."""
-        if self._snapshot_timer:  # 중복 방지
-            return
-        interval = float(self._settings.get(["periodic_interval"]) or 1.0)
-        self._snapshot_timer = RepeatedTimer(interval, self._snapshot_tick, run_first=True)
-        self._snapshot_timer.start()
-        self._logger.info(f"[FACTOR MQTT] snapshot timer started every {interval}s")
+        with self._snapshot_timer_lock:
+            if self._snapshot_timer:  # 중복 방지
+                return
+            interval = float(self._settings.get(["periodic_interval"]) or 1.0)
+            self._snapshot_timer = RepeatedTimer(interval, self._snapshot_tick, run_first=True)
+            self._snapshot_timer.start()
+            self._logger.info(f"[FACTOR MQTT] snapshot timer started every {interval}s")
 
     def _stop_snapshot_timer(self):
         """스냅샷 전송 타이머를 중지합니다."""
-        if self._snapshot_timer:
-            self._snapshot_timer.cancel()
-            self._snapshot_timer = None
-            self._logger.info("[FACTOR MQTT] snapshot timer stopped")
+        with self._snapshot_timer_lock:
+            if self._snapshot_timer:
+                self._snapshot_timer.cancel()
+                self._snapshot_timer = None
+                self._logger.info("[FACTOR MQTT] snapshot timer stopped")
 
     def _snapshot_tick(self):
         """스냅샷 타이머 콜백 함수"""

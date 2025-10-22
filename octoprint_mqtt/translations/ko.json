@@ -1,0 +1,90 @@
+{
+  "ui": {
+    "title": "FACTOR MQTT",
+    "login": {
+      "title": "로그인",
+      "email": "이메일",
+      "password": "비밀번호",
+      "button": "로그인",
+      "status": "로그인 중...",
+      "error": "Email과 PW를 입력하세요",
+      "failed": "로그인 실패"
+    },
+    "register": {
+      "title": "장비 등록",
+      "select": "장비 선택",
+      "new": "신규 등록",
+      "instanceId": "Instance ID",
+      "generate": "생성",
+      "create": "생성",
+      "next": "다음",
+      "status": "등록 중...",
+      "error": "Instance ID를 입력/생성하세요",
+      "success": "등록 성공",
+      "failed": "등록 실패",
+      "connection": {
+        "title": "프린터 연결 정보",
+        "none": "프린터 연결 정보가 없습니다"
+      }
+    },
+    "camera": {
+      "title": "카메라 설정",
+      "url": "스트림 URL",
+      "test": "테스트",
+      "save": "저장",
+      "status": {
+        "saving": "저장 중...",
+        "success": "저장 완료",
+        "failed": "저장 실패",
+        "urlRequired": "URL을 입력하세요"
+      }
+    },
+    "mqtt": {
+      "title": "MQTT 설정",
+      "broker": {
+        "host": "브로커 호스트",
+        "port": "포트",
+        "username": "사용자명 (선택)",
+        "password": "비밀번호 (선택)"
+      },
+      "tls": {
+        "enable": "TLS/SSL 사용",
+        "insecure": "인증서 검증 건너뛰기",
+        "caCert": "CA 인증서 경로"
+      },
+      "topic": "토픽 접두사",
+      "qos": "QoS 레벨",
+      "retain": "메시지 유지",
+      "publish": {
+        "status": "상태 발행",
+        "progress": "진행률 발행",
+        "temperature": "온도 발행",
+        "gcode": "G-code 발행",
+        "snapshot": "스냅샷 발행"
+      },
+      "interval": "상태 전송 간격 (초)",
+      "test": "연결 테스트",
+      "save": "저장",
+      "register": "등록",
+      "status": {
+        "testing": "연결 테스트 중...",
+        "success": "연결 테스트 성공!",
+        "failed": "연결 테스트 실패",
+        "connected": "MQTT 브로커에 연결됨",
+        "disconnected": "MQTT 브로커에 연결되지 않음",
+        "checking": "연결 확인 중...",
+        "needLogin": "로그인이 필요합니다",
+        "needRegister": "등록 완료 후 확인할 수 있습니다"
+      }
+    },
+    "tabs": {
+      "login": "1. 로그인",
+      "register": "2. 등록",
+      "mqtt": "3. MQTT 설정"
+    },
+    "messages": {
+      "saveAfterStep3": "3단계(등록 완료) 이후에 저장할 수 있습니다.",
+      "loginRequired": "로그인 후 저장할 수 있습니다."
+    }
+  }
+}
