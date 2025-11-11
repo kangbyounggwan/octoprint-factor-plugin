@@ -30,8 +30,9 @@ That's why we created **FACTOR** - an external monitoring platform that integrat
 - [Quick Start](#-quick-start)
   - [Step 1: Sign Up](#step-1-sign-up)
   - [Step 2: Install Plugin](#step-2-install-plugin)
-  - [Step 3: Login & Register Device](#step-3-login--register-device)
-  - [Step 4: Configure MQTT](#step-4-configure-mqtt)
+  - [Step 3: Login in Plugin](#step-3-login-in-plugin)
+  - [Step 4: Register Device](#step-4-register-device)
+  - [Step 5: Complete Setup on Web](#step-5-complete-setup-on-web)
 - [Troubleshooting](#-troubleshooting)
 - [Contributing](#-contributing)
 - [License](#-license)
@@ -141,7 +142,7 @@ That's why we created **FACTOR** - an external monitoring platform that integrat
 
 ---
 
-### Step 3: Login & Register Device
+### Step 3: Login in Plugin
 
 <div align="center">
 
@@ -154,51 +155,46 @@ That's why we created **FACTOR** - an external monitoring platform that integrat
    - Enter your **email/password** from Step 1
    - Click **Login** button
 
+---
+
+### Step 4: Register Device
+
 <div align="center">
 
 <img src="docs/3-1단계.png" alt="Device Registration" width="600"/>
 
 </div>
 
-2. **Register Printer**:
-   - Select **New Registration** option (default)
+1. **Generate Device UUID**:
    - Click **Create** button
-   - Confirm auto-generated Instance ID
+   - Copy the auto-generated Device UUID
 
-3. **Camera Setup** (Optional):
+2. **Camera Setup** (Optional):
    - Enter stream URL (e.g., `http://192.168.1.100:8080/stream`)
    - Test connection with **Test** button
    - Click **Save**
 
-> 💡 **Supported Formats**: MJPEG, WebRTC, RTSP, HLS
+3. **Complete Registration**:
+   - Click **Register** button
+
+> 💡 **Supported Camera Formats**: MJPEG, WebRTC, RTSP, HLS
 
 ---
 
-### Step 4: Configure MQTT
+### Step 5: Complete Setup on Web
 
-<div align="center">
+1. **Go to Website**:
+   - Click **Go to FACTOR Website** button in plugin
+   - Or visit [https://factor.io.kr](https://factor.io.kr) directly
 
-<img src="docs/3-2단계.png" alt="MQTT Configuration" width="600"/>
+2. **Register Printer**:
+   - Enter the **Device UUID** from Step 4
+   - Configure printer name, description, etc.
+   - Click **Complete Registration**
 
-</div>
-
-1. **MQTT Broker Settings**:
-   ```
-   Broker Host: factor.io.kr
-   Port: 1883 (plain) or 8883 (TLS)
-   ```
-
-2. **Security Settings** (Recommended):
-   - ✅ Check **Use TLS/SSL**
-   - Change port to **8883**
-
-3. **Test Connection**:
-   - Click **Connection Test** button
-   - Verify "Connected" message
-
-4. **Save Settings**:
-   - Click **Save** button
-   - Finalize with **Register** button
+3. **Start Monitoring**:
+   - View real-time printer status on dashboard
+   - MQTT automatically connects and starts sending data
 
 <div align="center">
 

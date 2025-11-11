@@ -4,9 +4,9 @@ from setuptools import setup
 README = (Path(__file__).parent / "README.md").read_text(encoding="utf-8")
 
 setup(
-    name="octoprint-factor-mqtt",
-    version="1.0.9",
-    description="MQTT-Plugin from FACTOR - MQTT integration plugin for OctoPrint",
+    name="octoprint-factor-plugin",
+    version="2.0.0",
+    description="FACTOR Plugin - Remote monitoring and camera integration for OctoPrint",
     long_description=README,
     long_description_content_type="text/markdown",
     author="FACTOR",

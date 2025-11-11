@@ -1,7 +1,31 @@
-/* globals OctoPrint, ko, $, API_BASEURL */
+/* globals OctoPrint, ko, $, API_BASEURL, FactorMQTT_i18n */
 $(function () {
+    // i18n 초기화 및 DOM 업데이트 함수
+    function applyTranslations() {
+      var t = FactorMQTT_i18n.t;
+
+      // data-i18n 속성으로 텍스트 번역
+      $("[data-i18n]").each(function() {
+        var key = $(this).attr("data-i18n");
+        $(this).text(t(key));
+      });
+
+      // data-i18n-html 속성으로 HTML 번역
+      $("[data-i18n-html]").each(function() {
+        var key = $(this).attr("data-i18n-html");
+        $(this).html(t(key));
+      });
+
+      // data-i18n-placeholder 속성으로 placeholder 번역
+      $("[data-i18n-placeholder]").each(function() {
+        var key = $(this).attr("data-i18n-placeholder");
+        $(this).attr("placeholder", t(key));
+      });
+    }
+
     function MqttViewModel(parameters) {
       var self = this;
+    var t = FactorMQTT_i18n.t;
     // [AUTH ADD] 설정: 실제 서버 주소로 교체하세요
     var AUTH_URL = "plugin/factor_mqtt/auth/login";
 
@@ -31,8 +55,8 @@ $(function () {
       $("#fm-login-btn").on("click", function () {
         var email = ($("#fm-login-id").val() || "").trim();
         var pw = $("#fm-login-pw").val() || "";
-        if (!email || !pw) { $("#fm-login-status").text("Email과 PW를 입력하세요."); return; }
-        $("#fm-login-status").text("로그인 중...");
+        if (!email || !pw) { $("#fm-login-status").text(t("ui.login.error")); return; }
+        $("#fm-login-status").text(t("ui.login.status"));
         // OctoPrint.postJson: 자동으로 /api/ prefix와 X-Api-Key 헤더 포함
         OctoPrint.postJson(AUTH_URL, { email: email, password: pw })
           .done(function (data) {
@@ -49,18 +73,15 @@ $(function () {
               $("#fm-login-status").text(msg); self.isAuthed(false);
             }
           })
-          .fail(function (xhr) { var m = (xhr && xhr.responseJSON && (xhr.responseJSON.error || xhr.responseJSON.message)) || "로그인 실패"; $("#fm-login-status").text(m); self.isAuthed(false); });
+          .fail(function (xhr) { var m = (xhr && xhr.responseJSON && (xhr.responseJSON.error || xhr.responseJSON.message)) || t("ui.login.failed"); $("#fm-login-status").text(m); self.isAuthed(false); });
       });
     };
 
     // [AUTH ADD] 오버레이 토글 + 가드 적용
     self.updateAuthBarrier = function () {
       var authed = !!self.isAuthed();
-      // 3단계에서만 전체 활성화
-      setInputsDisabled(!(authed && self.wizardStep() === 3));
-      if (authed && self.wizardStep() === 3) {
-        try { self.checkConnectionStatus(); } catch (e) {}
-      }
+      // 3단계는 웹 이동 화면이므로 특별한 가드 불필요
+      setInputsDisabled(!authed);
     };
 
     // [WIZARD] 2단계: 등록 오버레이
@@ -157,28 +178,21 @@ $(function () {
         });
         $("#fm-register-btn").on("click", function () {
           var iid = ($("#fm-instance-id").val() || "").trim();
-          if (!iid) { $("#fm-register-status").text("Instance ID를 입력/생성하세요."); return; }
-          $("#fm-register-status").text("등록 중...");
-          var auth = self.authResp() || {}; var user = auth.user || null; var token = auth.access_token || auth.accessToken;
-          var body = { instance_id: iid, user: user && { id: user.id } };
-          if (token) body.access_token = token;
-          OctoPrint.postJson("plugin/factor_mqtt/register", body)
-            .done(function (data) {
-              if (data && (data.success === true || data.raw || Object.keys(data).length)) {
-                $("#fm-register-status").text("등록 성공");
-                // 서버에 저장 요청 (보안: sessionStorage 사용하지 않음)
-                try {
-                  OctoPrint.postJson("plugin/factor_mqtt/device", { device_uuid: iid });
-                } catch (e) {}
-                self.wizardStep(3); self.updateAuthBarrier();
-              } else {
-                $("#fm-register-status").text("등록 실패");
-              }
-            })
-            .fail(function (xhr) {
-              var msg = (xhr && xhr.responseJSON && (xhr.responseJSON.error || xhr.responseJSON.message)) || ("등록 실패 (" + (xhr && xhr.status) + ")");
-              $("#fm-register-status").text(msg);
-            });
+          if (!iid) { $("#fm-register-status").text(t("ui.register.error")); return; }
+          $("#fm-register-status").text(t("ui.register.status"));
+
+          // Device UUID 저장
+          self.instanceId(iid);
+          try {
+            OctoPrint.postJson("plugin/factor_mqtt/device", { device_uuid: iid });
+          } catch (e) {}
+
+          $("#fm-register-status").text(t("ui.register.success"));
+          self.wizardStep(3);
+          self.updateAuthBarrier();
+
+          // 3단계 웹 이동 버튼 바인딩
+          setTimeout(bindWebTab, 100);
         });
       }
     };
@@ -216,6 +230,11 @@ $(function () {
         self.bindLoginTab();
       }
       self.onBeforeBinding = function () {
+        // i18n 초기화 및 번역 적용
+        FactorMQTT_i18n.init(function() {
+          applyTranslations();
+        });
+
         // 모달 재오픈 시 항상 1. 로그인 탭으로 이동
         resetWizardToLogin();
         var s = self.settingsViewModel && self.settingsViewModel.settings;
@@ -256,7 +275,12 @@ $(function () {
           if (target <= cur) {
             self.wizardStep(target);
             self.updateAuthBarrier();
-            if (target === 2) { self.renderRegisterTab(); setTimeout(bindCameraSection, 0); }
+            if (target === 2) {
+              self.renderRegisterTab();
+              setTimeout(bindCameraSection, 0);
+            } else if (target === 3) {
+              setTimeout(bindWebTab, 0);
+            }
           }
         });
 
@@ -280,6 +304,7 @@ $(function () {
             } else {
               self.wizardStep(3);
               self.updateAuthBarrier();
+              setTimeout(bindWebTab, 0);
             }
             self.checkConnectionStatus();
           })
@@ -306,6 +331,24 @@ $(function () {
         } catch (e) {}
       };
 
+      // --- 3단계 웹 이동 버튼 바인딩 ---
+      function bindWebTab() {
+        var $btn = $("#fm-goto-web");
+        if (!$btn.length) return;
+        if (!$btn.data("bound")) {
+          $btn.data("bound", true);
+          $btn.off("click").on("click", function() {
+            var iid = self.instanceId() || "";
+            if (!iid) {
+              alert(t("ui.web.error"));
+              return;
+            }
+            var url = "https://factor.io.kr/devices/register?code=" + encodeURIComponent(iid);
+            window.open(url, "_blank");
+          });
+        }
+      }
+
       // --- 카메라 UI 바인딩 (등록 탭) ---
       function bindCameraSection() {
         var $url = $("#fm-camera-url");
@@ -315,7 +358,7 @@ $(function () {
           $url.val(self.cameraStreamUrl() || "");
           $("#fm-camera-test").on("click", function(){
             var url = ($url.val() || "").trim();
-            if (!url) { $("#fm-camera-status").text("URL을 입력하세요."); return; }
+            if (!url) { $("#fm-camera-status").text(t("ui.camera.status.urlRequired")); return; }
             self.cameraStreamUrl(url);
             var $modal = $("#cameraStreamModal");
             // settings 모달 내부라 중첩 모달 z-index 문제가 있을 수 있어 body로 이동
@@ -339,10 +382,10 @@ $(function () {
           $("#fm-camera-save").on("click", function(){
             var url = ($url.val() || "").trim();
             self.cameraStreamUrl(url);
-            $("#fm-camera-status").text("저장 중...");
+            $("#fm-camera-status").text(t("ui.camera.status.saving"));
             OctoPrint.postJson("plugin/factor_mqtt/camera", { stream_url: url })
               .done(function(){
-                $("#fm-camera-status").text("저장 완료");
+                $("#fm-camera-status").text(t("ui.camera.status.success"));
                 try {
                   var cam = self.pluginSettings && self.pluginSettings.camera;
                   if (cam) {
@@ -360,130 +403,29 @@ $(function () {
               })
               .fail(function(xhr){
                 var msg = (xhr && xhr.responseJSON && (xhr.responseJSON.error || xhr.responseJSON.message)) || ("HTTP " + (xhr && xhr.status));
-                $("#fm-camera-status").text("저장 실패: " + msg);
+                $("#fm-camera-status").text(t("ui.camera.status.failed") + ": " + msg);
               });
           });
         }
       }
   
-      // Settings 저장 직전에 파이썬 설정(observable)으로 되돌려 넣기
-      var _orig_onSettingsBeforeSave = self.onSettingsBeforeSave;
+      // Settings 저장 (간소화 버전)
       self.onSettingsBeforeSave = function () {
-        if (self.wizardStep() !== 3) {
-          alert("3단계(등록 완료) 이후에 저장할 수 있습니다.");
-          return;
-        }
-        if (!self.isAuthed()) {
-          alert("로그인 후 저장할 수 있습니다.");
-          self.updateAuthBarrier();
-          return;
-        }
-        if (typeof _orig_onSettingsBeforeSave === "function") {
-          _orig_onSettingsBeforeSave();
-          return;
-        }
-        if (!self.pluginSettings) return;
-  
-        self.pluginSettings.broker_host(self.brokerHost());
-        self.pluginSettings.broker_port(parseInt(self.brokerPort() || 1883, 10));
-        self.pluginSettings.broker_username(self.brokerUsername());
-        self.pluginSettings.broker_password(self.brokerPassword());
-        self.pluginSettings.topic_prefix(self.topicPrefix());
-        self.pluginSettings.qos_level(parseInt(self.qosLevel() || 1, 10));
-        self.pluginSettings.retain_messages(!!self.retainMessages());
-        self.pluginSettings.publish_status(!!self.publishStatus());
-        self.pluginSettings.publish_progress(!!self.publishProgress());
-         self.pluginSettings.publish_temperature(!!self.publishTemperature());
-         self.pluginSettings.publish_gcode(!!self.publishGcode());
-         self.pluginSettings.publish_snapshot(!!self.publishSnapshot());
-         self.pluginSettings.periodic_interval(parseFloat(self.periodicInterval()) || 1.0);
-        // 카메라 값도 메모리 설정에 반영
+        // 카메라 URL만 저장
         try {
-          if (self.pluginSettings.camera) {
-            if (typeof self.pluginSettings.camera.stream_url === "function") self.pluginSettings.camera.stream_url(self.cameraStreamUrl());
-            else self.pluginSettings.camera.stream_url = self.cameraStreamUrl();
+          if (self.pluginSettings && self.pluginSettings.camera) {
+            if (typeof self.pluginSettings.camera.stream_url === "function") {
+              self.pluginSettings.camera.stream_url(self.cameraStreamUrl());
+            } else {
+              self.pluginSettings.camera.stream_url = self.cameraStreamUrl();
+            }
           }
         } catch (e) {}
-  
-        // 저장 후 플러그인에서 _connect_mqtt 재시도하므로 조금 기다렸다 상태 재확인
-        setTimeout(self.checkConnectionStatus, 1000);
       };
   
-      // 상태 확인 (GET)
-      var _orig_checkConnectionStatus = self.checkConnectionStatus;
+      // 상태 확인 제거 (더 이상 MQTT 설정 화면 없음)
       self.checkConnectionStatus = function () {
-        if (self.wizardStep() !== 3) {
-          self.connectionStatus("등록 완료 후 확인할 수 있습니다.");
-          self.isConnected(false);
-          return;
-        }
-        if (!self.isAuthed()) {
-          self.connectionStatus("로그인이 필요합니다.");
-          self.isConnected(false);
-          return;
-        }
-        if (typeof _orig_checkConnectionStatus === "function") {
-          _orig_checkConnectionStatus();
-          return;
-        }
-        if (!self.loginState.isUser()) {
-          self.connectionStatus("로그인이 필요합니다.");
-          self.isConnected(false);
-          return;
-        }
-        // OctoPrint.ajax: 세션/CSRF 자동 처리
-        OctoPrint.ajax("GET", "plugin/factor_mqtt/status")
-          .done(function (r) {
-            if (r && r.connected) {
-              self.connectionStatus("MQTT 브로커에 연결됨");
-              self.isConnected(true);
-            } else {
-              self.connectionStatus("MQTT 브로커에 연결되지 않음");
-              self.isConnected(false);
-            }
-          })
-          .fail(function () {
-            self.connectionStatus("연결 상태를 확인할 수 없습니다.");
-            self.isConnected(false);
-          });
-      };
-  
-      // 연결 테스트 (POST)
-      self.testConnection = function () {
-        self.connectionStatus("연결 테스트 중...");
-  
-        var payload = {
-          broker_host: self.brokerHost(),
-          broker_port: parseInt(self.brokerPort() || 0, 10),
-          broker_username: self.brokerUsername(),
-          broker_password: self.brokerPassword(),
-          publish: true,
-          // 서버 쪽에서 topic_prefix 키를 쓰므로 test_topic 지정 안 해도 되지만,
-          // 명시적으로 넣고 싶다면 아래처럼:
-          test_topic: (self.topicPrefix() || "octoprint") + "/test"
-        };
-  
-        // OctoPrint.postJson: CSRF/세션/헤더 자동
-        OctoPrint.postJson("plugin/factor_mqtt/test", payload)
-          .done(function (r) {
-            if (r && r.success) {
-              self.connectionStatus("연결 테스트 성공!");
-              self.isConnected(true);
-            } else {
-              self.connectionStatus("연결 테스트 실패: " + (r && r.error ? r.error : "알 수 없는 오류"));
-              self.isConnected(false);
-            }
-          })
-          .fail(function (xhr) {
-            var err = "연결 테스트 중 오류 발생";
-            try {
-              if (xhr && xhr.responseJSON && xhr.responseJSON.error) {
-                err += ": " + xhr.responseJSON.error;
-              }
-            } catch (e) {}
-            self.connectionStatus(err);
-            self.isConnected(false);
-          });
+        // No-op: 3단계는 웹 이동 화면
       };
     }
   

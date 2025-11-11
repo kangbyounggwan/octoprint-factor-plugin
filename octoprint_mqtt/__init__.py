@@ -18,9 +18,9 @@ import hashlib
 
 
 
-__plugin_name__ = "MQTT-Plugin from FACTOR"
+__plugin_name__ = "FACTOR Plugin"
 __plugin_pythoncompat__ = ">=3.8,<4"
-__plugin_version__ = "1.0.9"
+__plugin_version__ = "2.0.0"
 __plugin_identifier__ = "factor_mqtt"
 
         
@@ -144,7 +144,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         status_url = f"{internal_base}/api/plugin/{pid}/status"
         test_url   = f"{internal_base}/api/plugin/{pid}/test"
 
-        self._logger.info("[FACTOR MQTT] REST endpoints ready:")
+        self._logger.info("[FACTOR] REST endpoints ready:")
         self._logger.info(" - GET  %s", status_url)
         self._logger.info(" - POST %s", test_url)
         self._logger.info("   (헤더 'X-Api-Key' 필요)")
@@ -152,7 +152,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
     def get_template_configs(self):
         return [dict(
             type="settings",
-            name="FACTOR MQTT",
+            name="FACTOR",
             template="mqtt_settings.jinja2",
             custom_bindings=True   # ← 여기 꼭 True
         )]
@@ -261,9 +261,9 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
                 self.mqtt_client.subscribe(control_topic, qos=qos)
                 self.mqtt_client.subscribe(gcode_topic, qos=qos)
                 self.mqtt_client.subscribe(camera_cmd, qos=qos)
-                self._logger.info(f"[FACTOR MQTT] subscribe: {control_topic} | {gcode_topic} | {camera_cmd} (qos={qos})")
+                self._logger.info(f"[FACTOR] subscribe: {control_topic} | {gcode_topic} | {camera_cmd} (qos={qos})")
             except Exception as e:
-                self._logger.warning(f"[FACTOR MQTT] subscribe 실패: {e}")
+                self._logger.warning(f"[FACTOR] subscribe 실패: {e}")
         else:
             self._logger.error(f"MQTT 연결 실패 rc={rc}")
 
@@ -350,7 +350,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             # 기타 토픽은 무시
             return
         except Exception as e:
-            self._logger.exception(f"[FACTOR MQTT] on_message 처리 오류: {e}")
+            self._logger.exception(f"[FACTOR] on_message 처리 오류: {e}")
 
     def _handle_gcode_message(self, data: dict):
         # 위임: 모듈로 분리된 구현 사용
@@ -445,9 +445,9 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             for job_id in expired:
                 self._gcode_jobs.pop(job_id, None)
             if expired:
-                self._logger.warning(f"[FACTOR MQTT] 만료된 job 정리: {expired}")
+                self._logger.warning(f"[FACTOR] 만료된 job 정리: {expired}")
         except Exception as e:
-            self._logger.error(f"[FACTOR MQTT] job 정리 중 오류: {e}")
+            self._logger.error(f"[FACTOR] job 정리 중 오류: {e}")
     
     def _check_mqtt_connection_status(self):
         """MQTT 연결 상태를 확인합니다."""
@@ -1344,7 +1344,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
     def get_update_information(self):
         return {
             "factor_mqtt": {
-                "displayName": "MQTT-Plugin from FACTOR",
+                "displayName": "FACTOR Plugin",
                 "displayVersion": __plugin_version__,
                 "type": "github_release",
                 "user": "kangbyounggwan",
@@ -1425,7 +1425,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             interval = float(self._settings.get(["periodic_interval"]) or 1.0)
             self._snapshot_timer = RepeatedTimer(interval, self._snapshot_tick, run_first=True)
             self._snapshot_timer.start()
-            self._logger.info(f"[FACTOR MQTT] snapshot timer started every {interval}s")
+            self._logger.info(f"[FACTOR] snapshot timer started every {interval}s")
 
     def _stop_snapshot_timer(self):
         """스냅샷 전송 타이머를 중지합니다."""
@@ -1433,7 +1433,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             if self._snapshot_timer:
                 self._snapshot_timer.cancel()
                 self._snapshot_timer = None
-                self._logger.info("[FACTOR MQTT] snapshot timer stopped")
+                self._logger.info("[FACTOR] snapshot timer stopped")
 
     def _snapshot_tick(self):
         """스냅샷 타이머 콜백 함수"""

@@ -1,6 +1,6 @@
 {
   "ui": {
-    "title": "FACTOR MQTT",
+    "title": "FACTOR Plugin",
     "login": {
       "title": "로그인",
       "email": "이메일",
@@ -79,8 +79,16 @@
     },
     "tabs": {
       "login": "1. 로그인",
-      "register": "2. 등록",
-      "mqtt": "3. MQTT 설정"
+      "register": "2. 설비 등록",
+      "web": "3. 웹 이동"
+    },
+    "web": {
+      "title": "설비 등록 완료!",
+      "description": "이제 FACTOR 웹사이트에서 프린터를 확인하고<br/>최종 설정을 완료하세요.",
+      "deviceUuid": "등록된 Device UUID",
+      "button": "FACTOR 웹사이트로 이동",
+      "help": "웹사이트에서 프린터 이름, 알림 설정 등을 구성할 수 있습니다.",
+      "error": "Device UUID가 없습니다. 2단계에서 등록을 완료해주세요."
     },
     "messages": {
       "saveAfterStep3": "3단계(등록 완료) 이후에 저장할 수 있습니다.",

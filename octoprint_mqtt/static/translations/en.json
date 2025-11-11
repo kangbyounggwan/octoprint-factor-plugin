@@ -1,6 +1,6 @@
 {
   "ui": {
-    "title": "FACTOR MQTT",
+    "title": "FACTOR Plugin",
     "login": {
       "title": "Login",
       "email": "Email",
@@ -79,8 +79,16 @@
     },
     "tabs": {
       "login": "1. Login",
-      "register": "2. Register",
-      "mqtt": "3. MQTT Settings"
+      "register": "2. Device Registration",
+      "web": "3. Go to Web"
+    },
+    "web": {
+      "title": "Device Registration Complete!",
+      "description": "Now check your printer on the FACTOR website<br/>and complete the final setup.",
+      "deviceUuid": "Registered Device UUID",
+      "button": "Go to FACTOR Website",
+      "help": "You can configure printer name, notification settings, etc. on the website.",
+      "error": "Device UUID not found. Please complete registration in Step 2."
     },
     "messages": {
       "saveAfterStep3": "You can save after completing Step 3 (Registration).",

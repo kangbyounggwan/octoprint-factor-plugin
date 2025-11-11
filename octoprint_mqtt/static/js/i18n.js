@@ -10,10 +10,12 @@
 
     // Load translations
     function loadTranslations(lang, callback) {
-        var url = "plugin/factor_mqtt/static/translations/" + lang + ".json";
+        // OctoPrint plugin asset URL format
+        var url = "plugin/factor_mqtt/static/translations/" + lang + ".json?" + Date.now();
         $.ajax({
             url: url,
             dataType: "json",
+            cache: false,
             success: function(data) {
                 translations[lang] = data;
                 if (callback) callback();

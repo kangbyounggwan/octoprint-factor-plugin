@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=40.8.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "octoprint-factor-plugin"
+version = "2.0.0"
+description = "FACTOR Plugin - Remote monitoring and camera integration for OctoPrint"
+readme = "README.md"
+authors = [
+    {name = "FACTOR Team", email = "tlvh109@gmail.com"}
+]
+license = {text = "AGPLv3"}
+requires-python = ">=3.8,<4"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: OctoPrint",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: GNU Affero General Public License v3",
+    "Natural Language :: English",
+    "Natural Language :: Korean",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: System :: Monitoring",
+]
+keywords = ["octoprint", "plugin", "3dprinting", "mqtt", "monitoring", "camera"]
+
+dependencies = [
+    "OctoPrint>=1.4.0",
+    "paho-mqtt>=2.0.0",
+]
+
+[project.urls]
+Homepage = "https://factor.io.kr"
+Repository = "https://github.com/kangbyounggwan/octoprint-factor-plugin"
+Issues = "https://github.com/kangbyounggwan/octoprint-factor-plugin/issues"
+
+[project.entry-points."octoprint.plugin"]
+factor_mqtt = "octoprint_mqtt"
