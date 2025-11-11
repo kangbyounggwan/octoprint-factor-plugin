@@ -6,7 +6,7 @@
     "use strict";
 
     var translations = {};
-    var currentLang = "ko"; // default
+    var currentLang = "en"; // default to English
 
     // Load translations
     function loadTranslations(lang, callback) {
@@ -36,8 +36,8 @@
             if (obj && obj.hasOwnProperty(keys[i])) {
                 obj = obj[keys[i]];
             } else {
-                // Fallback to Korean if key not found
-                obj = translations["ko"];
+                // Fallback to English if key not found
+                obj = translations["en"];
                 for (var j = 0; j < keys.length; j++) {
                     if (obj && obj.hasOwnProperty(keys[j])) {
                         obj = obj[keys[j]];
@@ -63,12 +63,19 @@
                 return "en";
             }
         }
-        return "ko"; // default
+        return "en"; // default to English
     }
 
     // Initialize
     function init(callback) {
-        currentLang = detectLanguage();
+        // Check if user has saved language preference
+        var savedLang = localStorage.getItem("factor_mqtt_lang");
+        if (savedLang && (savedLang === "ko" || savedLang === "en")) {
+            currentLang = savedLang;
+        } else {
+            // Auto-detect from browser, but default to English
+            currentLang = detectLanguage();
+        }
 
         // Load both languages
         var loaded = 0;
@@ -83,6 +90,30 @@
         loadTranslations("en", complete);
     }
 
+    // Apply translations to DOM
+    function applyTranslations() {
+        // Translate all elements with data-i18n attribute
+        $("[data-i18n]").each(function() {
+            var $el = $(this);
+            var key = $el.attr("data-i18n");
+            $el.text(t(key));
+        });
+
+        // Translate placeholders
+        $("[data-i18n-placeholder]").each(function() {
+            var $el = $(this);
+            var key = $el.attr("data-i18n-placeholder");
+            $el.attr("placeholder", t(key));
+        });
+
+        // Translate HTML content
+        $("[data-i18n-html]").each(function() {
+            var $el = $(this);
+            var key = $el.attr("data-i18n-html");
+            $el.html(t(key));
+        });
+    }
+
     // Export
     window.FactorMQTT_i18n = {
         init: init,
@@ -90,10 +121,15 @@
         setLanguage: function(lang) {
             if (lang === "ko" || lang === "en") {
                 currentLang = lang;
+                // Save preference
+                localStorage.setItem("factor_mqtt_lang", lang);
+                // Re-apply translations
+                applyTranslations();
             }
         },
         getCurrentLanguage: function() {
             return currentLang;
-        }
+        },
+        applyTranslations: applyTranslations
     };
 })();

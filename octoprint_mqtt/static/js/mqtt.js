@@ -23,6 +23,25 @@ $(function () {
       });
     }
 
+    // 언어 선택기 초기화
+    function initLanguageSelector() {
+      var currentLang = FactorMQTT_i18n.getCurrentLanguage();
+
+      // 현재 언어에 맞게 active 클래스 설정
+      $("#fm-lang-selector .btn").removeClass("active");
+      $("#fm-lang-selector .btn[data-lang='" + currentLang + "']").addClass("active");
+
+      // 버튼 클릭 이벤트
+      $("#fm-lang-selector .btn").off("click").on("click", function() {
+        var lang = $(this).attr("data-lang");
+        FactorMQTT_i18n.setLanguage(lang);
+
+        // UI 업데이트
+        $("#fm-lang-selector .btn").removeClass("active");
+        $(this).addClass("active");
+      });
+    }
+
     function MqttViewModel(parameters) {
       var self = this;
     var t = FactorMQTT_i18n.t;
@@ -264,6 +283,8 @@ $(function () {
         // i18n 초기화 및 번역 적용
         FactorMQTT_i18n.init(function() {
           applyTranslations();
+          // 언어 선택기 초기화
+          initLanguageSelector();
         });
 
         // 모달 재오픈 시 항상 1. 로그인 탭으로 이동

@@ -1,5 +1,17 @@
 <!-- settings_plugin_factor_mqtt 의 컨텐츠만 넣어야 합니다. tab-pane 같은 래퍼 금지 -->
 <div id="settings_plugin_factor_mqtt" class="factor-mqtt">
+  <!-- Language Selector -->
+  <div style="position: absolute; top: 10px; right: 10px; z-index: 1000;">
+    <div class="btn-group" id="fm-lang-selector">
+      <button type="button" class="btn btn-mini" data-lang="en" title="English">
+        🇺🇸 EN
+      </button>
+      <button type="button" class="btn btn-mini" data-lang="ko" title="한국어">
+        🇰🇷 KO
+      </button>
+    </div>
+  </div>
+
   <ul class="nav nav-tabs">
     <li data-bind="css: { active: wizardStep() === 1 }"><a href="#" data-step="1" data-i18n="ui.tabs.login">1. 로그인</a></li>
     <li data-bind="css: { active: wizardStep() === 2 }"><a href="#" data-step="2" data-i18n="ui.tabs.register">2. 설비 등록</a></li>

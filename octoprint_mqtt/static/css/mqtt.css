@@ -1,5 +1,32 @@
 /* FACTOR Plugin - OctoPrint 표준 스타일 준수 */
 
+/* 언어 선택기 스타일 */
+#settings_plugin_factor_mqtt #fm-lang-selector {
+    display: flex;
+    gap: 4px;
+}
+
+#settings_plugin_factor_mqtt #fm-lang-selector .btn {
+    padding: 4px 10px;
+    font-size: 12px;
+    line-height: 1.4;
+    border: 1px solid #ccc;
+    background-color: #f5f5f5;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+#settings_plugin_factor_mqtt #fm-lang-selector .btn:hover {
+    background-color: #e0e0e0;
+    border-color: #aaa;
+}
+
+#settings_plugin_factor_mqtt #fm-lang-selector .btn.active {
+    background-color: #0088cc;
+    color: white;
+    border-color: #0088cc;
+}
+
 /* 탭 아래 여백 */
 #settings_plugin_factor_mqtt .nav-tabs {
     margin-bottom: 20px;
