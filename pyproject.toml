@@ -14,7 +14,6 @@ license = {text = "AGPLv3"}
 requires-python = ">=3.8,<4"
 classifiers = [
     "Development Status :: 4 - Beta",
-    "Framework :: OctoPrint",
     "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: GNU Affero General Public License v3",
     "Natural Language :: English",
@@ -25,7 +24,9 @@ classifiers = [
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: System :: Monitoring",
+    "Topic :: Printing",
 ]
 keywords = ["octoprint", "plugin", "3dprinting", "mqtt", "monitoring", "camera"]
 
