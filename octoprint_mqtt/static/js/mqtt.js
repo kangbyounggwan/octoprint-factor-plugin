@@ -73,7 +73,38 @@ $(function () {
               $("#fm-login-status").text(msg); self.isAuthed(false);
             }
           })
-          .fail(function (xhr) { var m = (xhr && xhr.responseJSON && (xhr.responseJSON.error || xhr.responseJSON.message)) || t("ui.login.failed"); $("#fm-login-status").text(m); self.isAuthed(false); });
+          .fail(function (xhr) {
+            var msg = t("ui.login.failed");
+            if (xhr && xhr.status) {
+              // 서버 에러 코드별 친절한 메시지
+              if (xhr.status === 502) {
+                msg = t("ui.login.serverUnavailable");
+              } else if (xhr.status === 503) {
+                msg = t("ui.login.serverMaintenance");
+              } else if (xhr.status === 504) {
+                msg = t("ui.login.serverTimeout");
+              } else if (xhr.responseJSON) {
+                // 서버가 반환한 구체적인 에러 메시지가 있으면 사용
+                var serverMsg = xhr.responseJSON.error || xhr.responseJSON.message;
+                if (serverMsg) {
+                  // 서버 메시지가 영어라면 번역 키와 매칭 시도
+                  if (serverMsg.includes("temporarily unavailable")) {
+                    msg = t("ui.login.serverUnavailable");
+                  } else if (serverMsg.includes("under maintenance")) {
+                    msg = t("ui.login.serverMaintenance");
+                  } else if (serverMsg.includes("not responding") || serverMsg.includes("timed out")) {
+                    msg = t("ui.login.connectionTimeout");
+                  } else if (serverMsg.includes("Cannot connect")) {
+                    msg = t("ui.login.connectionError");
+                  } else {
+                    msg = serverMsg;
+                  }
+                }
+              }
+            }
+            $("#fm-login-status").text(msg);
+            self.isAuthed(false);
+          });
       });
     };
 

@@ -957,12 +957,40 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
 
             url = f"{api_base}/api/auth/login"
             resp = requests.post(url, json={"email": email, "password": password}, timeout=8)
+
+            # Handle specific HTTP error codes
+            if resp.status_code == 502:
+                self._logger.error("FACTOR server returned 502 Bad Gateway")
+                return make_response(jsonify({
+                    "error": "FACTOR server is temporarily unavailable. Please try again in a few minutes."
+                }), 502)
+            elif resp.status_code == 503:
+                self._logger.error("FACTOR server returned 503 Service Unavailable")
+                return make_response(jsonify({
+                    "error": "FACTOR server is under maintenance. Please try again later."
+                }), 503)
+            elif resp.status_code == 504:
+                self._logger.error("FACTOR server returned 504 Gateway Timeout")
+                return make_response(jsonify({
+                    "error": "FACTOR server is not responding. Please try again later."
+                }), 504)
+
             try:
                 is_json = (resp.headers.get("content-type", "").lower().startswith("application/json"))
             except Exception:
                 is_json = False
             out = (resp.json() if is_json else {"raw": resp.text})
             return make_response(jsonify(out), resp.status_code)
+        except requests.exceptions.Timeout:
+            self._logger.error("FACTOR API request timeout")
+            return make_response(jsonify({
+                "error": "Connection to FACTOR server timed out. Please check your internet connection."
+            }), 504)
+        except requests.exceptions.ConnectionError:
+            self._logger.error("FACTOR API connection error")
+            return make_response(jsonify({
+                "error": "Cannot connect to FACTOR server. Please check your internet connection."
+            }), 503)
         except Exception as e:
             self._logger.error(f"Login error: {e}")
             return make_response(jsonify({"error": "Internal server error"}), 500)

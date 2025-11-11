@@ -8,7 +8,12 @@
       "button": "로그인",
       "status": "로그인 중...",
       "error": "Email과 PW를 입력하세요",
-      "failed": "로그인 실패"
+      "failed": "로그인 실패",
+      "serverUnavailable": "FACTOR 서버가 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도해주세요.",
+      "serverMaintenance": "FACTOR 서버가 점검 중입니다. 나중에 다시 시도해주세요.",
+      "serverTimeout": "FACTOR 서버가 응답하지 않습니다. 나중에 다시 시도해주세요.",
+      "connectionTimeout": "서버 연결 시간이 초과되었습니다. 인터넷 연결을 확인해주세요.",
+      "connectionError": "서버에 연결할 수 없습니다. 인터넷 연결을 확인해주세요."
     },
     "register": {
       "title": "장비 등록",

@@ -8,7 +8,12 @@
       "button": "Login",
       "status": "Logging in...",
       "error": "Please enter Email and Password",
-      "failed": "Login failed"
+      "failed": "Login failed",
+      "serverUnavailable": "FACTOR server is temporarily unavailable. Please try again in a few minutes.",
+      "serverMaintenance": "FACTOR server is under maintenance. Please try again later.",
+      "serverTimeout": "FACTOR server is not responding. Please try again later.",
+      "connectionTimeout": "Connection to FACTOR server timed out. Please check your internet connection.",
+      "connectionError": "Cannot connect to FACTOR server. Please check your internet connection."
     },
     "register": {
       "title": "Device Registration",
