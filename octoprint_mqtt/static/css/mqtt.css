@@ -1,129 +1,58 @@
-/* MQTT 플러그인 스타일 */
+/* FACTOR Plugin - OctoPrint 표준 스타일 준수 */
 
-#settings_plugin_mqtt .form-group {
+/* 탭 아래 여백 */
+#settings_plugin_factor_mqtt .nav-tabs {
     margin-bottom: 20px;
 }
 
-#settings_plugin_mqtt .help-block {
-    font-size: 12px;
-    color: #666;
-    margin-top: 5px;
+/* 섹션 제목 스타일 (OctoPrint 표준) */
+#settings_plugin_factor_mqtt h3 {
+    margin-top: 0;
+    margin-bottom: 10px;
 }
 
-#settings_plugin_mqtt .checkbox {
-    margin-bottom: 15px;
-}
-
-#settings_plugin_mqtt .checkbox label {
-    font-weight: normal;
-}
-
-#mqtt_connection_status {
+#settings_plugin_factor_mqtt h4 {
     margin-top: 20px;
     margin-bottom: 15px;
 }
 
-#mqtt_connection_status.alert-success {
+/* form-horizontal 스타일 조정 */
+#settings_plugin_factor_mqtt .form-horizontal .control-group {
+    margin-bottom: 15px;
+}
+
+#settings_plugin_factor_mqtt .form-horizontal .control-label {
+    width: 160px;
+    text-align: right;
+    padding-right: 10px;
+}
+
+#settings_plugin_factor_mqtt .form-horizontal .controls {
+    margin-left: 180px;
+}
+
+/* 인라인 도움말 */
+#settings_plugin_factor_mqtt .help-inline {
+    display: inline-block;
+    margin-left: 10px;
+    color: #999;
+}
+
+/* Alert 스타일 */
+#settings_plugin_factor_mqtt .alert {
+    padding: 15px;
+    margin-bottom: 20px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+}
+
+#settings_plugin_factor_mqtt .alert-success {
     background-color: #dff0d8;
     border-color: #d6e9c6;
     color: #3c763d;
 }
 
-#mqtt_connection_status.alert-danger {
-    background-color: #f2dede;
-    border-color: #ebccd1;
-    color: #a94442;
-}
-
-#mqtt_connection_status.alert-warning {
-    background-color: #fcf8e3;
-    border-color: #faebcc;
-    color: #8a6d3b;
-}
-
-#mqtt_connection_status.alert-info {
-    background-color: #d9edf7;
-    border-color: #bce8f1;
-    color: #31708f;
-}
-
-#mqtt_test_connection {
-    margin-top: 10px;
-}
-
-#mqtt_test_connection .glyphicon {
-    margin-right: 5px;
-}
-
-/* 설정 섹션 제목 */
-#settings_plugin_mqtt h4 {
-    color: #333;
-    border-bottom: 1px solid #eee;
-    padding-bottom: 10px;
-    margin-bottom: 20px;
-}
-
-#settings_plugin_mqtt h5 {
-    color: #555;
-    margin-top: 25px;
-    margin-bottom: 15px;
-}
-
-/* 폼 컨트롤 스타일링 */
-#settings_plugin_mqtt .form-control {
-    border-radius: 4px;
-    border: 1px solid #ccc;
-    padding: 8px 12px;
-    font-size: 14px;
-}
-
-#settings_plugin_mqtt .form-control:focus {
-    border-color: #66afe9;
-    outline: 0;
-    box-shadow: inset 0 1px 1px rgba(0,0,0,.075), 0 0 8px rgba(102,175,233,.6);
-}
-
-/* 체크박스 스타일링 */
-#settings_plugin_mqtt input[type="checkbox"] {
-    margin-right: 8px;
-}
-
-/* 버튼 스타일링 */
-#mqtt_test_connection {
-    background-color: #337ab7;
-    border-color: #2e6da4;
-    color: white;
-    padding: 8px 16px;
-    border-radius: 4px;
-    border: 1px solid transparent;
-    cursor: pointer;
-}
-
-#mqtt_test_connection:hover {
-    background-color: #286090;
-    border-color: #204d74;
-}
-
-#mqtt_test_connection:active {
-    background-color: #204d74;
-    border-color: #122b40;
-}
-
-
-/* 이 플러그인 영역에서만 적용 */
-#settings_plugin_factor_mqtt.factor-mqtt .form-group { margin-bottom: 12px; }
-#settings_plugin_factor_mqtt.factor-mqtt .help-block { margin: 6px 0 0; }
-
-/* 어떤 커스텀 CSS가 form-control을 inline-block으로 바꿔놨을 때를 대비 */
-#settings_plugin_factor_mqtt.factor-mqtt input.form-control,
-#settings_plugin_factor_mqtt.factor-mqtt select.form-control,
-#settings_plugin_factor_mqtt.factor-mqtt textarea.form-control {
-  display: block;
-  width: 100%;
-}
-
-/* 좁은 모달에서 좌우 여백 충돌 방지 */
-#settings_plugin_factor_mqtt.factor-mqtt .row {
-  margin-left: 0;
-  margin-right: 0;
+#settings_plugin_factor_mqtt .alert-heading {
+    margin-top: 0;
+    margin-bottom: 10px;
 }

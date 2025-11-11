@@ -1,90 +1,118 @@
 <!-- settings_plugin_factor_mqtt 의 컨텐츠만 넣어야 합니다. tab-pane 같은 래퍼 금지 -->
 <div id="settings_plugin_factor_mqtt" class="factor-mqtt">
-  <ul class="nav nav-tabs" style="margin-bottom:10px;">
+  <ul class="nav nav-tabs">
     <li data-bind="css: { active: wizardStep() === 1 }"><a href="#" data-step="1" data-i18n="ui.tabs.login">1. 로그인</a></li>
     <li data-bind="css: { active: wizardStep() === 2 }"><a href="#" data-step="2" data-i18n="ui.tabs.register">2. 설비 등록</a></li>
-    <li data-bind="css: { active: wizardStep() === 3 }"><a href="#" data-step="3" data-i18n="ui.tabs.web">3. 웹 이동</a></li>
   </ul>
 
-  <div id="tab-login" data-bind="visible: wizardStep() === 1" style="margin-bottom:12px;">
-    <div style="margin-bottom:8px;">
-      <div style="font-size:18px; font-weight:bold;" data-i18n="ui.login.title">로그인</div>
-      <div style="font-size:12px; color:#666;">FACTOR 플랫폼에 로그인하세요</div>
-    </div>
-    <div class="form-group" style="max-width:520px;">
-      <label for="fm-login-id" data-i18n="ui.login.email">이메일</label>
-      <input type="text" id="fm-login-id" class="form-control" data-i18n-placeholder="ui.login.email" placeholder="이메일" />
-    </div>
-    <div class="form-group" style="max-width:520px;">
-      <label for="fm-login-pw" data-i18n="ui.login.password">비밀번호</label>
-      <input type="password" id="fm-login-pw" class="form-control" data-i18n-placeholder="ui.login.password" placeholder="비밀번호" />
-    </div>
-    <div class="form-group" style="max-width:520px;">
-      <button id="fm-login-btn" class="btn btn-primary" data-i18n="ui.login.button">로그인</button>
-      <span id="fm-login-status" class="text-muted" style="margin-left:8px;"></span>
-    </div>
-  </div>
+  <div id="tab-login" data-bind="visible: wizardStep() === 1">
+    <h3 data-i18n="ui.login.title">로그인</h3>
+    <p class="text-muted">FACTOR 플랫폼에 로그인하세요</p>
 
-  <div id="tab-register" data-bind="visible: wizardStep() === 2" style="margin-bottom:12px;">
-    <h4 data-i18n="ui.register.title">장비 등록</h4>
-    <div class="form-inline" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:6px;">
-      <select id="fm-register-select" class="form-control" style="min-width:220px;">
-        <option value="__new__" data-i18n="ui.register.new">신규 등록</option>
-      </select>
-    </div>
-    <div class="form-inline" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-      <input type="text" id="fm-instance-id" class="form-control" data-i18n-placeholder="ui.register.instanceId" placeholder="Instance ID (UUID)" style="min-width:260px;">
-      <button id="fm-instance-gen" class="btn btn-default btn-sm" data-i18n="ui.register.generate">생성</button>
-    </div>
-    <div id="fm-register-conn" style="margin-top:8px;"></div>
-
-    <hr/>
-
-    <div id="fm-camera-section">
-      <h4 data-i18n="ui.camera.title">카메라 설정</h4>
-      <div class="form-inline" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-        <input type="text" id="fm-camera-url" class="form-control" placeholder="http://&lt;ip&gt;:&lt;port&gt;/stream" style="min-width:320px;"
-               data-bind="value: cameraStreamUrl, valueUpdate: 'afterkeydown'">
-        <button id="fm-camera-test" class="btn" data-i18n="ui.camera.test">테스트</button>
-        <button id="fm-camera-save" class="btn btn-primary" data-i18n="ui.camera.save">저장</button>
-        <span id="fm-camera-status" class="text-muted"></span>
+    <form class="form-horizontal">
+      <div class="control-group">
+        <label class="control-label" for="fm-login-id" data-i18n="ui.login.email">이메일</label>
+        <div class="controls">
+          <input type="text" id="fm-login-id" class="input-block-level" data-i18n-placeholder="ui.login.email" placeholder="이메일">
+        </div>
       </div>
-      <p class="help-block">브라우저에서 접근 가능한 MJPEG/HTTP 스트림 URL을 입력하세요.</p>
-    </div>
-  <div class="right-actions">
-    <button id="fm-register-btn" class="btn btn-primary btn-sm" data-i18n="ui.mqtt.register">등록</button>
-    <button id="fm-register-next" class="btn btn-default btn-sm" style="display:none;" data-i18n="ui.register.next">다음</button>
-    <span id="fm-register-status" class="text-muted"></span>
-  </div>
-</div>
 
-<style>
-  .right-actions{
-    display:flex; justify-content:flex-end; align-items:center; gap:8px; margin-top:10px;
-  }
-</style>
+      <div class="control-group">
+        <label class="control-label" for="fm-login-pw" data-i18n="ui.login.password">비밀번호</label>
+        <div class="controls">
+          <input type="password" id="fm-login-pw" class="input-block-level" data-i18n-placeholder="ui.login.password" placeholder="비밀번호">
+        </div>
+      </div>
+
+      <div class="control-group">
+        <div class="controls">
+          <button id="fm-login-btn" class="btn btn-primary" type="button" data-i18n="ui.login.button">로그인</button>
+          <span id="fm-login-status" class="text-muted" style="margin-left:10px;"></span>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <div id="tab-register" data-bind="visible: wizardStep() === 2">
+    <h3 data-i18n="ui.register.title">장비 등록</h3>
+
+    <form class="form-horizontal">
+      <div class="control-group">
+        <label class="control-label" for="fm-register-select" data-i18n="ui.register.select">장비 선택</label>
+        <div class="controls">
+          <select id="fm-register-select" class="input-block-level">
+            <option value="__new__" data-i18n="ui.register.new">신규 등록</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <label class="control-label" for="fm-instance-id" data-i18n="ui.register.instanceId">Instance ID</label>
+        <div class="controls">
+          <div class="input-append">
+            <input type="text" id="fm-instance-id" class="input-xlarge" data-i18n-placeholder="ui.register.instanceId" placeholder="Instance ID (UUID)">
+            <button id="fm-instance-gen" class="btn" type="button" data-i18n="ui.register.generate">생성</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="fm-register-conn" style="margin-left: 180px; margin-bottom: 10px;"></div>
+    </form>
+
+    <h4 data-i18n="ui.camera.title">카메라 설정</h4>
+
+    <form class="form-horizontal">
+      <div class="control-group">
+        <label class="control-label" for="fm-camera-url" data-i18n="ui.camera.url">스트림 URL</label>
+        <div class="controls">
+          <div class="input-append">
+            <input type="text" id="fm-camera-url" class="input-xlarge" placeholder="http://&lt;ip&gt;:&lt;port&gt;/stream"
+                   data-bind="value: cameraStreamUrl, valueUpdate: 'afterkeydown'">
+            <button id="fm-camera-test" class="btn" type="button" data-i18n="ui.camera.test">테스트</button>
+            <button id="fm-camera-save" class="btn btn-primary" type="button" data-i18n="ui.camera.save">저장</button>
+          </div>
+          <span id="fm-camera-status" class="help-inline"></span>
+          <p class="help-block">브라우저에서 접근 가능한 MJPEG/HTTP 스트림 URL을 입력하세요.</p>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <div class="controls">
+          <button id="fm-register-btn" class="btn btn-primary" type="button" data-i18n="ui.mqtt.register">등록</button>
+          <span id="fm-register-status" class="help-inline"></span>
+        </div>
+      </div>
+    </form>
+  </div>
 
   <div id="tab-web" data-bind="visible: wizardStep() === 3">
-    <div style="text-align:center; padding:40px 20px;">
-      <h3 data-i18n="ui.web.title">설비 등록 완료!</h3>
-      <p style="font-size:16px; margin:20px 0;" data-i18n-html="ui.web.description">
+    <div class="alert alert-success" style="margin-top: 20px;">
+      <h4 class="alert-heading" data-i18n="ui.web.title">설비 등록 완료!</h4>
+      <p data-i18n-html="ui.web.description">
         이제 FACTOR 웹사이트에서 프린터를 확인하고<br/>
         최종 설정을 완료하세요.
       </p>
+    </div>
 
-      <div style="background:#f5f5f5; padding:20px; border-radius:8px; margin:30px auto; max-width:500px;">
-        <div style="font-size:14px; color:#666; margin-bottom:10px;" data-i18n="ui.web.deviceUuid">등록된 Device UUID</div>
-        <div style="font-size:18px; font-weight:bold; color:#333; word-break:break-all;" data-bind="text: instanceId"></div>
+    <form class="form-horizontal">
+      <div class="control-group">
+        <label class="control-label" data-i18n="ui.web.deviceUuid">등록된 Device UUID</label>
+        <div class="controls">
+          <input type="text" class="input-xxlarge" data-bind="value: instanceId" readonly>
+        </div>
       </div>
 
-      <button id="fm-goto-web" class="btn btn-primary btn-lg" style="margin-top:20px;">
-        <i class="fa fa-external-link"></i> <span data-i18n="ui.web.button">FACTOR 웹사이트로 이동</span>
-      </button>
-
-      <p style="font-size:12px; color:#999; margin-top:20px;" data-i18n="ui.web.help">
-        웹사이트에서 프린터 이름, 알림 설정 등을 구성할 수 있습니다.
-      </p>
-    </div>
+      <div class="control-group">
+        <div class="controls">
+          <button id="fm-goto-web" class="btn btn-primary btn-large" type="button">
+            <i class="fa fa-external-link"></i> <span data-i18n="ui.web.button">FACTOR 웹사이트로 이동</span>
+          </button>
+          <p class="help-block" data-i18n="ui.web.help">
+            웹사이트에서 프린터 이름, 알림 설정 등을 구성할 수 있습니다.
+          </p>
+        </div>
+      </div>
+    </form>
   </div>
 </div>
 

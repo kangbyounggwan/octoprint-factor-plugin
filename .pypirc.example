@@ -1,0 +1,8 @@
+[pypi]
+username = __token__
+password = pypi-YOUR_TOKEN_HERE
+
+# Instructions:
+# 1. Copy this file to: C:\Users\USER\.pypirc
+# 2. Replace YOUR_TOKEN_HERE with your actual PyPI token
+# 3. Run: python -m twine upload dist/*
