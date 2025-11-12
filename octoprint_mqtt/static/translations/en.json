@@ -1,4 +1,35 @@
 {
+  "setup": {
+    "title": "FACTOR Device Setup",
+    "description": "Scan the QR code or click the button below to complete device setup on the FACTOR web dashboard.",
+    "instanceId": "Device ID:",
+    "setupUrl": "Setup URL:",
+    "qr": {
+      "loading": "Loading QR Code..."
+    },
+    "button": {
+      "openWeb": "Open Setup Page",
+      "refresh": "Refresh QR Code",
+      "copy": "Copy"
+    },
+    "status": {
+      "title": "Connection Status",
+      "registered": "Device Registered:",
+      "mqtt": "MQTT Connection:",
+      "checking": "Checking...",
+      "yes": "Yes",
+      "no": "No",
+      "connected": "Connected",
+      "disconnected": "Disconnected"
+    },
+    "help": {
+      "title": "How to Setup",
+      "step1": "Scan the QR code with your mobile device, or click \"Open Setup Page\" button",
+      "step2": "Login to your FACTOR account on the web page",
+      "step3": "Complete the device registration and configuration",
+      "step4": "Return here to verify the connection status"
+    }
+  },
   "ui": {
     "title": "FACTOR Plugin",
     "login": {

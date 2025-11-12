@@ -7,6 +7,7 @@ from octoprint.filemanager import FileDestinations
 
 from octoprint.util import RepeatedTimer
 from flask import jsonify, make_response
+import flask
 import requests
 import re
 import uuid
@@ -1114,6 +1115,63 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             return make_response(jsonify({"success": True, "instance_id": dev}), 200)
         except Exception as e:
             return make_response(jsonify({"success": False, "error": str(e)}), 500)
+
+    @octoprint.plugin.BlueprintPlugin.route("/qrcode", methods=["GET"])
+    def get_qrcode(self):
+        """Generate QR code for device setup URL"""
+        try:
+            import qrcode
+            from io import BytesIO
+
+            # Get or create instance ID
+            instance_id = self._settings.get(["instance_id"])
+            if not instance_id:
+                instance_id = self._ensure_instance_id()
+
+            # Create setup URL
+            setup_url = f"https://factor.io.kr/setup/{instance_id}"
+
+            # Generate QR code
+            qr = qrcode.QRCode(
+                version=1,
+                error_correction=qrcode.constants.ERROR_CORRECT_L,
+                box_size=10,
+                border=4,
+            )
+            qr.add_data(setup_url)
+            qr.make(fit=True)
+
+            img = qr.make_image(fill_color="black", back_color="white")
+
+            # Convert to bytes
+            buf = BytesIO()
+            img.save(buf, format='PNG')
+            buf.seek(0)
+
+            return flask.send_file(buf, mimetype='image/png')
+        except Exception as e:
+            self._logger.error(f"QR code generation error: {e}")
+            return make_response(jsonify({"error": str(e)}), 500)
+
+    @octoprint.plugin.BlueprintPlugin.route("/setup-url", methods=["GET"])
+    def get_setup_url(self):
+        """Get the setup URL for this device"""
+        try:
+            # Get or create instance ID
+            instance_id = self._settings.get(["instance_id"])
+            if not instance_id:
+                instance_id = self._ensure_instance_id()
+
+            setup_url = f"https://factor.io.kr/setup/{instance_id}"
+
+            return make_response(jsonify({
+                "success": True,
+                "instance_id": instance_id,
+                "setup_url": setup_url
+            }), 200)
+        except Exception as e:
+            self._logger.error(f"Setup URL generation error: {e}")
+            return make_response(jsonify({"error": str(e)}), 500)
 
     @octoprint.plugin.BlueprintPlugin.route("/camera", methods=["GET"])
     def get_camera_config(self):

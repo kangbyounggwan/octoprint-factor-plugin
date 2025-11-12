@@ -1,4 +1,35 @@
 {
+  "setup": {
+    "title": "FACTOR 장비 설정",
+    "description": "QR 코드를 스캔하거나 아래 버튼을 클릭하여 FACTOR 웹 대시보드에서 장비 설정을 완료하세요.",
+    "instanceId": "장비 ID:",
+    "setupUrl": "설정 URL:",
+    "qr": {
+      "loading": "QR 코드 로딩 중..."
+    },
+    "button": {
+      "openWeb": "설정 페이지 열기",
+      "refresh": "QR 코드 새로고침",
+      "copy": "복사"
+    },
+    "status": {
+      "title": "연결 상태",
+      "registered": "장비 등록:",
+      "mqtt": "MQTT 연결:",
+      "checking": "확인 중...",
+      "yes": "예",
+      "no": "아니오",
+      "connected": "연결됨",
+      "disconnected": "연결 안됨"
+    },
+    "help": {
+      "title": "설정 방법",
+      "step1": "모바일 기기로 QR 코드를 스캔하거나, \"설정 페이지 열기\" 버튼을 클릭하세요",
+      "step2": "웹 페이지에서 FACTOR 계정으로 로그인하세요",
+      "step3": "장비 등록 및 설정을 완료하세요",
+      "step4": "여기로 돌아와서 연결 상태를 확인하세요"
+    }
+  },
   "ui": {
     "title": "FACTOR Plugin",
     "login": {

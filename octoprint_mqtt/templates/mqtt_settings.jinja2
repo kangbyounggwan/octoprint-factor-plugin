@@ -1,7 +1,7 @@
-<!-- settings_plugin_factor_mqtt 의 컨텐츠만 넣어야 합니다. tab-pane 같은 래퍼 금지 -->
-<div id="settings_plugin_factor_mqtt" class="factor-mqtt">
+<!-- FACTOR Plugin Setup - Simple QR Code & Web Setup -->
+<div id="settings_plugin_factor_mqtt" class="factor-mqtt-setup">
   <!-- Language Selector -->
-  <div style="position: absolute; top: 10px; right: 10px; z-index: 1000;">
+  <div class="language-selector">
     <div class="btn-group" id="fm-lang-selector">
       <button type="button" class="btn btn-mini" data-lang="en" title="English">
         🇺🇸 EN
@@ -12,131 +12,85 @@
     </div>
   </div>
 
-  <ul class="nav nav-tabs">
-    <li data-bind="css: { active: wizardStep() === 1 }"><a href="#" data-step="1" data-i18n="ui.tabs.login">1. 로그인</a></li>
-    <li data-bind="css: { active: wizardStep() === 2 }"><a href="#" data-step="2" data-i18n="ui.tabs.register">2. 설비 등록</a></li>
-  </ul>
-
-  <div id="tab-login" data-bind="visible: wizardStep() === 1">
-    <h3 data-i18n="ui.login.title">로그인</h3>
-    <p class="text-muted">FACTOR 플랫폼에 로그인하세요</p>
-
-    <form class="form-horizontal">
-      <div class="control-group">
-        <label class="control-label" for="fm-login-id" data-i18n="ui.login.email">이메일</label>
-        <div class="controls">
-          <input type="text" id="fm-login-id" class="input-block-level" data-i18n-placeholder="ui.login.email" placeholder="이메일">
-        </div>
-      </div>
-
-      <div class="control-group">
-        <label class="control-label" for="fm-login-pw" data-i18n="ui.login.password">비밀번호</label>
-        <div class="controls">
-          <input type="password" id="fm-login-pw" class="input-block-level" data-i18n-placeholder="ui.login.password" placeholder="비밀번호">
-        </div>
-      </div>
-
-      <div class="control-group">
-        <div class="controls">
-          <button id="fm-login-btn" class="btn btn-primary" type="button" data-i18n="ui.login.button">로그인</button>
-          <span id="fm-login-status" class="text-muted" style="margin-left:10px;"></span>
-        </div>
-      </div>
-    </form>
-  </div>
-
-  <div id="tab-register" data-bind="visible: wizardStep() === 2">
-    <h3 data-i18n="ui.register.title">장비 등록</h3>
-
-    <form class="form-horizontal">
-      <div class="control-group">
-        <label class="control-label" for="fm-register-select" data-i18n="ui.register.select">장비 선택</label>
-        <div class="controls">
-          <select id="fm-register-select" class="input-block-level">
-            <option value="__new__" data-i18n="ui.register.new">신규 등록</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="control-group">
-        <label class="control-label" for="fm-instance-id" data-i18n="ui.register.instanceId">Instance ID</label>
-        <div class="controls">
-          <div class="input-append">
-            <input type="text" id="fm-instance-id" class="input-xlarge" data-i18n-placeholder="ui.register.instanceId" placeholder="Instance ID (UUID)">
-            <button id="fm-instance-gen" class="btn" type="button" data-i18n="ui.register.generate">생성</button>
-          </div>
-        </div>
-      </div>
-
-      <div id="fm-register-conn" style="margin-left: 180px; margin-bottom: 10px;"></div>
-    </form>
-
-    <h4 data-i18n="ui.camera.title">카메라 설정</h4>
-
-    <form class="form-horizontal">
-      <div class="control-group">
-        <label class="control-label" for="fm-camera-url" data-i18n="ui.camera.url">스트림 URL</label>
-        <div class="controls">
-          <div class="input-append">
-            <input type="text" id="fm-camera-url" class="input-xlarge" placeholder="http://&lt;ip&gt;:&lt;port&gt;/stream"
-                   data-bind="value: cameraStreamUrl, valueUpdate: 'afterkeydown'">
-            <button id="fm-camera-test" class="btn" type="button" data-i18n="ui.camera.test">테스트</button>
-            <button id="fm-camera-save" class="btn btn-primary" type="button" data-i18n="ui.camera.save">저장</button>
-          </div>
-          <span id="fm-camera-status" class="help-inline"></span>
-          <p class="help-block">브라우저에서 접근 가능한 MJPEG/HTTP 스트림 URL을 입력하세요.</p>
-        </div>
-      </div>
-
-      <div class="control-group">
-        <div class="controls">
-          <button id="fm-register-btn" class="btn btn-primary" type="button" data-i18n="ui.mqtt.register">등록</button>
-          <span id="fm-register-status" class="help-inline"></span>
-        </div>
-      </div>
-    </form>
-  </div>
-
-  <div id="tab-web" data-bind="visible: wizardStep() === 3">
-    <div class="alert alert-success" style="margin-top: 20px;">
-      <h4 class="alert-heading" data-i18n="ui.web.title">설비 등록 완료!</h4>
-      <p data-i18n-html="ui.web.description">
-        이제 FACTOR 웹사이트에서 프린터를 확인하고<br/>
-        최종 설정을 완료하세요.
+  <!-- Main Setup Container -->
+  <div class="setup-container">
+    <!-- Header -->
+    <div class="setup-header">
+      <h2 data-i18n="setup.title">FACTOR Device Setup</h2>
+      <p class="text-muted" data-i18n="setup.description">
+        Scan the QR code or click the button below to complete device setup on the FACTOR web dashboard.
       </p>
     </div>
 
-    <form class="form-horizontal">
-      <div class="control-group">
-        <label class="control-label" data-i18n="ui.web.deviceUuid">등록된 Device UUID</label>
-        <div class="controls">
-          <input type="text" class="input-xxlarge" data-bind="value: instanceId" readonly>
+    <!-- QR Code Section -->
+    <div class="qr-section">
+      <div class="qr-container">
+        <img id="fm-qr-code" src="" alt="QR Code" />
+        <div id="fm-qr-loading" class="qr-loading">
+          <i class="icon-spinner icon-spin"></i>
+          <span data-i18n="setup.qr.loading">Loading QR Code...</span>
         </div>
       </div>
 
-      <div class="control-group">
-        <div class="controls">
-          <button id="fm-goto-web" class="btn btn-primary btn-large" type="button">
-            <i class="fa fa-external-link"></i> <span data-i18n="ui.web.button">FACTOR 웹사이트로 이동</span>
-          </button>
-          <p class="help-block" data-i18n="ui.web.help">
-            웹사이트에서 프린터 이름, 알림 설정 등을 구성할 수 있습니다.
-          </p>
+      <div class="setup-info">
+        <div class="info-item">
+          <label data-i18n="setup.instanceId">Device ID:</label>
+          <code id="fm-instance-display">Loading...</code>
+        </div>
+
+        <div class="info-item">
+          <label data-i18n="setup.setupUrl">Setup URL:</label>
+          <div class="url-container">
+            <input type="text" id="fm-setup-url" class="input-block-level" readonly />
+            <button id="fm-copy-url" class="btn btn-small" title="Copy URL">
+              <i class="icon-copy"></i>
+            </button>
+          </div>
         </div>
       </div>
-    </form>
-  </div>
-</div>
+    </div>
 
-<div id="cameraStreamModal" class="modal hide fade" tabindex="-1" role="dialog" aria-hidden="true">
-  <div class="modal-header">
-    <button type="button" class="close" data-dismiss="modal">×</button>
-    <h3>Stream test</h3>
-  </div>
-  <div class="modal-body" style="text-align:center;">
-    <img id="cameraStreamPreview" style="max-width:100%; max-height:60vh;" />
-  </div>
-  <div class="modal-footer">
-    <button class="btn" data-dismiss="modal">Close</button>
+    <!-- Action Buttons -->
+    <div class="action-buttons">
+      <a id="fm-open-setup" href="#" target="_blank" class="btn btn-primary btn-large">
+        <i class="icon-external-link"></i>
+        <span data-i18n="setup.button.openWeb">Open Setup Page</span>
+      </a>
+
+      <button id="fm-refresh-qr" class="btn btn-small">
+        <i class="icon-refresh"></i>
+        <span data-i18n="setup.button.refresh">Refresh QR Code</span>
+      </button>
+    </div>
+
+    <!-- Status Section -->
+    <div class="status-section">
+      <h4 data-i18n="setup.status.title">Connection Status</h4>
+
+      <div class="status-item">
+        <span class="status-label" data-i18n="setup.status.registered">Device Registered:</span>
+        <span id="fm-status-registered" class="status-value">
+          <i class="icon-question-sign"></i> <span data-i18n="setup.status.checking">Checking...</span>
+        </span>
+      </div>
+
+      <div class="status-item">
+        <span class="status-label" data-i18n="setup.status.mqtt">MQTT Connection:</span>
+        <span id="fm-status-mqtt" class="status-value">
+          <i class="icon-question-sign"></i> <span data-i18n="setup.status.checking">Checking...</span>
+        </span>
+      </div>
+    </div>
+
+    <!-- Help Section -->
+    <div class="help-section">
+      <h4 data-i18n="setup.help.title">How to Setup</h4>
+      <ol>
+        <li data-i18n="setup.help.step1">Scan the QR code with your mobile device, or click "Open Setup Page" button</li>
+        <li data-i18n="setup.help.step2">Login to your FACTOR account on the web page</li>
+        <li data-i18n="setup.help.step3">Complete the device registration and configuration</li>
+        <li data-i18n="setup.help.step4">Return here to verify the connection status</li>
+      </ol>
+    </div>
   </div>
 </div>
