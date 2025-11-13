@@ -357,7 +357,8 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
     def _on_mqtt_message(self, client, userdata, msg):
         try:
             topic = msg.topic or ""
-            inst = self._settings.get(["instance_id"]) or "unknown"
+            # Use temporary ID first during setup, then saved ID for registered devices
+            inst = self._temp_instance_id or self._settings.get(["instance_id"]) or "unknown"
 
             # 1) Control: control/<instance_id>
             if topic == f"control/{inst}":
@@ -410,8 +411,27 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
                             self._settings.set(["registered"], True)
                             self._settings.save()
 
-                            self._temp_instance_id = None
                             self._logger.info(f"✅ Device registration confirmed via MQTT: {instance_id}")
+
+                            # Send confirmation back to server via MQTT
+                            confirmation_payload = {
+                                "status": "confirmed",
+                                "instance_id": instance_id,
+                                "confirmed_at": data.get("registered_at")
+                            }
+                            confirmation_topic = f"device/{instance_id}/registration/ack"
+                            try:
+                                self.mqtt_client.publish(
+                                    confirmation_topic,
+                                    json.dumps(confirmation_payload),
+                                    qos=1
+                                )
+                                self._logger.info(f"[FACTOR] Sent registration confirmation to server: {confirmation_topic}")
+                            except Exception as e:
+                                self._logger.error(f"Failed to send registration confirmation: {e}")
+
+                            # Clear temporary instance ID
+                            self._temp_instance_id = None
 
                             # Unsubscribe from registration topic
                             self.mqtt_client.unsubscribe(topic)
