@@ -25,27 +25,10 @@
     <!-- QR Code Section -->
     <div class="qr-section">
       <div class="qr-container">
-        <img id="fm-qr-code" src="" alt="QR Code" />
+        <img id="fm-qr-code" src="" alt="QR Code" style="display: none;" />
         <div id="fm-qr-loading" class="qr-loading">
           <i class="icon-spinner icon-spin"></i>
           <span data-i18n="setup.qr.loading">Loading QR Code...</span>
-        </div>
-      </div>
-
-      <div class="setup-info">
-        <div class="info-item">
-          <label data-i18n="setup.instanceId">Device ID:</label>
-          <code id="fm-instance-display">Loading...</code>
-        </div>
-
-        <div class="info-item">
-          <label data-i18n="setup.setupUrl">Setup URL:</label>
-          <div class="url-container">
-            <input type="text" id="fm-setup-url" class="input-block-level" readonly />
-            <button id="fm-copy-url" class="btn btn-small" title="Copy URL">
-              <i class="icon-copy"></i>
-            </button>
-          </div>
         </div>
       </div>
     </div>

@@ -55,35 +55,30 @@
 /* QR Code Section */
 #settings_plugin_factor_mqtt .qr-section {
     display: flex;
-    gap: 30px;
+    justify-content: center;
     margin-bottom: 30px;
-    padding: 20px;
+    padding: 30px;
     background: #f9f9f9;
     border: 1px solid #ddd;
     border-radius: 4px;
 }
 
 #settings_plugin_factor_mqtt .qr-container {
-    flex-shrink: 0;
-    width: 250px;
-    height: 250px;
+    width: 350px;
+    height: 350px;
     background: white;
     border: 2px solid #ddd;
-    border-radius: 4px;
+    border-radius: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
     position: relative;
+    padding: 20px;
 }
 
 #settings_plugin_factor_mqtt #fm-qr-code {
     max-width: 100%;
     max-height: 100%;
-    display: none;
-}
-
-#settings_plugin_factor_mqtt #fm-qr-code.loaded {
-    display: block;
 }
 
 #settings_plugin_factor_mqtt .qr-loading {
@@ -96,43 +91,6 @@
 
 #settings_plugin_factor_mqtt .qr-loading.hidden {
     display: none;
-}
-
-#settings_plugin_factor_mqtt .setup-info {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-}
-
-#settings_plugin_factor_mqtt .info-item label {
-    display: block;
-    font-weight: bold;
-    margin-bottom: 5px;
-    color: #555;
-}
-
-#settings_plugin_factor_mqtt .info-item code {
-    display: block;
-    padding: 8px 12px;
-    background: white;
-    border: 1px solid #ddd;
-    border-radius: 3px;
-    font-size: 14px;
-    word-break: break-all;
-}
-
-#settings_plugin_factor_mqtt .url-container {
-    display: flex;
-    gap: 5px;
-}
-
-#settings_plugin_factor_mqtt .url-container input {
-    flex: 1;
-}
-
-#settings_plugin_factor_mqtt .url-container button {
-    flex-shrink: 0;
 }
 
 /* Action Buttons */
@@ -231,14 +189,9 @@
 
 /* Responsive Design */
 @media (max-width: 768px) {
-    #settings_plugin_factor_mqtt .qr-section {
-        flex-direction: column;
-        align-items: center;
-    }
-
     #settings_plugin_factor_mqtt .qr-container {
-        width: 200px;
-        height: 200px;
+        width: 280px;
+        height: 280px;
     }
 
     #settings_plugin_factor_mqtt .action-buttons {

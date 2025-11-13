@@ -30,8 +30,8 @@ $(function () {
 
       // Load QR code
       function loadQRCode() {
-        $("#fm-qr-loading").removeClass("hidden");
-        $("#fm-qr-code").removeClass("loaded");
+        $("#fm-qr-loading").show();
+        $("#fm-qr-code").hide();
 
         // Get setup URL first
         OctoPrint.ajax("GET", "plugin/factor_mqtt/setup-url")
@@ -40,24 +40,29 @@ $(function () {
               setupUrl = data.setup_url;
               instanceId = data.instance_id;
 
-              // Update UI
-              $("#fm-instance-display").text(instanceId);
-              $("#fm-setup-url").val(setupUrl);
+              // Update button href
               $("#fm-open-setup").attr("href", setupUrl);
 
               // Load QR code image
               var qrUrl = "plugin/factor_mqtt/qrcode?" + Date.now();
-              $("#fm-qr-code").attr("src", qrUrl).on("load", function() {
-                $("#fm-qr-loading").addClass("hidden");
-                $(this).addClass("loaded");
+              var $img = $("#fm-qr-code");
+
+              $img.on("load", function() {
+                $("#fm-qr-loading").hide();
+                $img.show();
+              }).on("error", function() {
+                $("#fm-qr-loading").html('<i class="icon-warning-sign"></i><br><span>Failed to load QR code</span>');
               });
+
+              $img.attr("src", qrUrl);
 
               // Update status
               checkStatus();
             }
           })
-          .fail(function() {
-            $("#fm-qr-loading").text("Failed to load QR code");
+          .fail(function(xhr) {
+            console.error("Failed to get setup URL:", xhr);
+            $("#fm-qr-loading").html('<i class="icon-warning-sign"></i><br><span>Failed to load setup URL</span>');
           });
       }
 
@@ -91,23 +96,6 @@ $(function () {
           });
       }
 
-      // Copy URL to clipboard
-      function copyToClipboard(text) {
-        var $temp = $("<input>");
-        $("body").append($temp);
-        $temp.val(text).select();
-        document.execCommand("copy");
-        $temp.remove();
-
-        // Show feedback
-        var $btn = $("#fm-copy-url");
-        var originalHtml = $btn.html();
-        $btn.html('<i class="icon-ok"></i>').prop("disabled", true);
-        setTimeout(function() {
-          $btn.html(originalHtml).prop("disabled", false);
-        }, 1500);
-      }
-
       self.onBeforeBinding = function () {
         // Initialize i18n and translations
         FactorMQTT_i18n.init(function() {
@@ -118,10 +106,6 @@ $(function () {
           loadQRCode();
 
           // Bind events
-          $("#fm-copy-url").on("click", function() {
-            copyToClipboard(setupUrl);
-          });
-
           $("#fm-refresh-qr").on("click", function() {
             loadQRCode();
           });
