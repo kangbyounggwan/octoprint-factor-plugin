@@ -271,7 +271,8 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
 
         try:
             qos = int(self._settings.get(["qos_level"]) or 1)
-            inst = self._settings.get(["instance_id"]) or self._temp_instance_id or "unknown"
+            # Use temporary ID first (for setup), then saved ID (for registered devices)
+            inst = self._temp_instance_id or self._settings.get(["instance_id"]) or "unknown"
 
             # Unsubscribe from old topics if they exist
             if hasattr(self, '_current_subscribed_id') and self._current_subscribed_id != inst:
