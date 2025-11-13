@@ -1006,22 +1006,27 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         """Generate QR code for device setup URL"""
         try:
             import qrcode
+            import qrcode.image.pil
             from io import BytesIO
+            from flask import send_file
 
             # Get or create instance ID
             instance_id = self._settings.get(["instance_id"])
             if not instance_id:
                 instance_id = self._ensure_instance_id()
 
+            self._logger.info(f"Generating QR code for instance ID: {instance_id}")
+
             # Create setup URL
             setup_url = f"https://factor.io.kr/setup/{instance_id}"
 
-            # Generate QR code
+            # Generate QR code with explicit image factory
             qr = qrcode.QRCode(
                 version=1,
                 error_correction=qrcode.constants.ERROR_CORRECT_L,
                 box_size=10,
                 border=4,
+                image_factory=qrcode.image.pil.PilImage
             )
             qr.add_data(setup_url)
             qr.make(fit=True)
@@ -1033,9 +1038,12 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             img.save(buf, format='PNG')
             buf.seek(0)
 
-            return flask.send_file(buf, mimetype='image/png')
+            return send_file(buf, mimetype='image/png', as_attachment=False, download_name='qrcode.png')
+        except ImportError as e:
+            self._logger.error(f"QR code library import error: {e}. Please install: pip install qrcode[pil]")
+            return make_response(jsonify({"error": f"Missing library: {str(e)}. Please install qrcode[pil]"}), 500)
         except Exception as e:
-            self._logger.error(f"QR code generation error: {e}")
+            self._logger.exception(f"QR code generation error: {e}")
             return make_response(jsonify({"error": str(e)}), 500)
 
     @octoprint.plugin.BlueprintPlugin.route("/setup-url", methods=["GET"])
