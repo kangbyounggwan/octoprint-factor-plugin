@@ -12,15 +12,15 @@
   },
   "setup": {
     "title": "FACTOR Device Setup",
-    "description": "Scan the QR code or click the button below to complete device setup on the FACTOR web dashboard.",
+    "description": "Click the button below to complete device setup on the FACTOR web dashboard.",
     "instanceId": "Device ID:",
     "setupUrl": "Setup URL:",
-    "qr": {
-      "loading": "Loading QR Code..."
+    "url": {
+      "loading": "Loading setup URL..."
     },
     "button": {
       "openWeb": "Open Setup Page",
-      "refresh": "Refresh QR Code",
+      "refresh": "Refresh Setup URL",
       "copy": "Copy"
     },
     "status": {
@@ -35,7 +35,7 @@
     },
     "help": {
       "title": "How to Setup",
-      "step1": "Scan the QR code with your mobile device, or click \"Open Setup Page\" button",
+      "step1": "Click \"Open Setup Page\" button to start setup",
       "step2": "Login to your FACTOR account on the web page",
       "step3": "Complete the device registration and configuration",
       "step4": "Return here to verify the connection status"

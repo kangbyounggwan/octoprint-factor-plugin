@@ -18,17 +18,24 @@
     <div class="setup-header">
       <h2 data-i18n="setup.title">FACTOR Device Setup</h2>
       <p class="text-muted" data-i18n="setup.description">
-        Scan the QR code or click the button below to complete device setup on the FACTOR web dashboard.
+        Click the button below to complete device setup on the FACTOR web dashboard.
       </p>
     </div>
 
-    <!-- QR Code Section -->
-    <div class="qr-section">
-      <div class="qr-container">
-        <img id="fm-qr-code" src="" alt="QR Code" style="display: none;" />
-        <div id="fm-qr-loading" class="qr-loading">
-          <i class="icon-spinner icon-spin"></i>
-          <span data-i18n="setup.qr.loading">Loading QR Code...</span>
+    <!-- Setup URL Section -->
+    <div class="url-section">
+      <div id="fm-url-loading" class="url-loading">
+        <i class="icon-spinner icon-spin"></i>
+        <span data-i18n="setup.url.loading">Loading setup URL...</span>
+      </div>
+      <div id="fm-url-display" style="display: none;">
+        <div class="url-info">
+          <label data-i18n="setup.instanceId">Device ID:</label>
+          <code id="fm-instance-id-text"></code>
+        </div>
+        <div class="url-info">
+          <label data-i18n="setup.setupUrl">Setup URL:</label>
+          <code id="fm-setup-url-text"></code>
         </div>
       </div>
     </div>
@@ -42,7 +49,7 @@
 
       <button id="fm-refresh-qr" class="btn btn-small">
         <i class="icon-refresh"></i>
-        <span data-i18n="setup.button.refresh">Refresh QR Code</span>
+        <span data-i18n="setup.button.refresh">Refresh Setup URL</span>
       </button>
     </div>
 
@@ -50,7 +57,7 @@
     <div class="help-section">
       <h4 data-i18n="setup.help.title">How to Setup</h4>
       <ol>
-        <li data-i18n="setup.help.step1">Scan the QR code with your mobile device, or click "Open Setup Page" button</li>
+        <li data-i18n="setup.help.step1">Click "Open Setup Page" button to start setup</li>
         <li data-i18n="setup.help.step2">Login to your FACTOR account on the web page</li>
         <li data-i18n="setup.help.step3">Complete the device registration and configuration</li>
         <li data-i18n="setup.help.step4">Return here to verify the connection status</li>

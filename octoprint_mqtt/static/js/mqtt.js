@@ -28,12 +28,12 @@ $(function () {
       var setupUrl = "";
       var instanceId = "";
 
-      // Load QR code
-      function loadQRCode() {
-        $("#fm-qr-loading").show();
-        $("#fm-qr-code").hide();
+      // Load setup URL
+      function loadSetupUrl() {
+        $("#fm-url-loading").show();
+        $("#fm-url-display").hide();
 
-        // Get setup URL first
+        // Get setup URL
         OctoPrint.ajax("GET", "plugin/factor_mqtt/setup-url")
           .done(function(data) {
             if (data && data.success) {
@@ -43,23 +43,17 @@ $(function () {
               // Update button href
               $("#fm-open-setup").attr("href", setupUrl);
 
-              // Load QR code image
-              var qrUrl = "plugin/factor_mqtt/qrcode?" + Date.now();
-              var $img = $("#fm-qr-code");
+              // Display URL as text
+              $("#fm-setup-url-text").text(setupUrl);
+              $("#fm-instance-id-text").text(instanceId);
 
-              $img.on("load", function() {
-                $("#fm-qr-loading").hide();
-                $img.show();
-              }).on("error", function() {
-                $("#fm-qr-loading").html('<i class="icon-warning-sign"></i><br><span>Failed to load QR code</span>');
-              });
-
-              $img.attr("src", qrUrl);
+              $("#fm-url-loading").hide();
+              $("#fm-url-display").show();
             }
           })
           .fail(function(xhr) {
             console.error("Failed to get setup URL:", xhr);
-            $("#fm-qr-loading").html('<i class="icon-warning-sign"></i><br><span>Failed to load setup URL</span>');
+            $("#fm-url-loading").html('<i class="icon-warning-sign"></i> <span>Failed to load setup URL</span>');
           });
       }
 
@@ -69,10 +63,10 @@ $(function () {
           FactorMQTT_i18n.applyTranslations();
           initLanguageSelector();
 
-          // Load QR code
-          loadQRCode();
+          // Load setup URL
+          loadSetupUrl();
 
-          // Bind events - Refresh QR code with NEW instance ID
+          // Bind events - Refresh setup URL with NEW instance ID
           $("#fm-refresh-qr").on("click", function() {
             var $btn = $(this);
             $btn.prop("disabled", true).html('<i class="icon-spinner icon-spin"></i> Refreshing...');
@@ -85,16 +79,16 @@ $(function () {
                   instanceId = data.instance_id;
                   console.log("New instance ID generated:", instanceId);
 
-                  // Reload QR code with new ID
-                  loadQRCode();
+                  // Reload setup URL with new ID
+                  loadSetupUrl();
                 }
               })
               .fail(function(xhr) {
-                console.error("Failed to refresh QR:", xhr);
-                alert("Failed to refresh QR code. Please try again.");
+                console.error("Failed to refresh setup URL:", xhr);
+                alert("Failed to refresh setup URL. Please try again.");
               })
               .always(function() {
-                $btn.prop("disabled", false).html('<i class="icon-refresh"></i> <span data-i18n="setup.button.refresh">Refresh QR Code</span>');
+                $btn.prop("disabled", false).html('<i class="icon-refresh"></i> <span data-i18n="setup.button.refresh">Refresh Setup URL</span>');
                 FactorMQTT_i18n.applyTranslations();
               });
           });

@@ -254,45 +254,53 @@
     color: #333;
 }
 
-/* QR Code Section */
-#settings_plugin_factor_mqtt .qr-section {
-    display: flex;
-    justify-content: center;
+/* URL Section */
+#settings_plugin_factor_mqtt .url-section {
     margin-bottom: 30px;
-    padding: 30px;
+    padding: 20px;
     background: #f9f9f9;
     border: 1px solid #ddd;
     border-radius: 4px;
 }
 
-#settings_plugin_factor_mqtt .qr-container {
-    width: 350px;
-    height: 350px;
-    background: white;
-    border: 2px solid #ddd;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-    padding: 20px;
-}
-
-#settings_plugin_factor_mqtt #fm-qr-code {
-    max-width: 100%;
-    max-height: 100%;
-}
-
-#settings_plugin_factor_mqtt .qr-loading {
+#settings_plugin_factor_mqtt .url-loading {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 10px;
     color: #999;
+    padding: 20px;
 }
 
-#settings_plugin_factor_mqtt .qr-loading.hidden {
-    display: none;
+#settings_plugin_factor_mqtt .url-loading i {
+    font-size: 24px;
+}
+
+#settings_plugin_factor_mqtt .url-info {
+    margin-bottom: 15px;
+}
+
+#settings_plugin_factor_mqtt .url-info:last-child {
+    margin-bottom: 0;
+}
+
+#settings_plugin_factor_mqtt .url-info label {
+    display: block;
+    font-weight: bold;
+    margin-bottom: 5px;
+    color: #555;
+}
+
+#settings_plugin_factor_mqtt .url-info code {
+    display: block;
+    padding: 10px;
+    background: white;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-family: Monaco, Consolas, 'Courier New', monospace;
+    font-size: 12px;
+    word-break: break-all;
+    color: #0088cc;
 }
 
 /* Action Buttons */
@@ -336,11 +344,6 @@
 
 /* Responsive Design */
 @media (max-width: 768px) {
-    #settings_plugin_factor_mqtt .qr-container {
-        width: 280px;
-        height: 280px;
-    }
-
     #settings_plugin_factor_mqtt .action-buttons {
         flex-direction: column;
     }
