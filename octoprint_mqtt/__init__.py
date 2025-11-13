@@ -47,7 +47,8 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
                  octoprint.plugin.ShutdownPlugin,
                  octoprint.plugin.EventHandlerPlugin,
                  octoprint.plugin.BlueprintPlugin,
-                 octoprint.plugin.WizardPlugin):
+                 octoprint.plugin.WizardPlugin,
+                 octoprint.plugin.PipPlugin):
     
     def __init__(self):
         super().__init__()
@@ -176,6 +177,18 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
 
     def get_wizard_details(self):
         return dict()
+
+    ##~~ PipPlugin mixin
+
+    def get_pip_additional_packages(self):
+        """
+        Return list of additional packages to install when plugin is installed.
+        This ensures qrcode and pillow are installed in OctoPrint's environment.
+        """
+        return [
+            "qrcode>=7.0",
+            "Pillow>=8.0.0"
+        ]
 
     ##~~ ShutdownPlugin mixin
     
