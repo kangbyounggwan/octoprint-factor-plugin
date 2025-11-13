@@ -4,14 +4,14 @@
 
 ---
 
-## 🎯 What's New
+##  What's New
 
-### 🏷️ Plugin Rebranding
+###  Plugin Rebranding
 - **New Name**: "FACTOR Plugin" (previously "MQTT-Plugin from FACTOR")
 - Clean, professional branding aligned with FACTOR platform
 - Updated all UI elements and documentation
 
-### 🔄 Simplified 3-Step Setup Flow
+###  Simplified 3-Step Setup Flow
 We've completely redesigned the registration process to make it faster and easier:
 
 **Old Flow** (4 steps):
@@ -28,13 +28,13 @@ We've completely redesigned the registration process to make it faster and easie
 - ✅ Better user experience
 - ✅ Web-based configuration is more flexible
 
-### 🌍 Full Internationalization
+###  Full Internationalization
 - **Korean (한국어)** and **English** support
 - Automatic language detection based on browser settings
 - All UI elements, messages, and tooltips translated
 - Easy to add more languages in the future
 
-### 📸 Improved Camera Setup
+###  Improved Camera Setup
 - Better camera URL validation
 - Live preview testing
 - Support for multiple stream formats (MJPEG, WebRTC, RTSP, HLS)
@@ -42,7 +42,7 @@ We've completely redesigned the registration process to make it faster and easie
 
 ---
 
-## 🔧 Technical Improvements
+##  Technical Improvements
 
 ### Code Quality
 - Refactored JavaScript for better maintainability
@@ -77,9 +77,9 @@ octoprint-factor-plugin/
 
 ---
 
-## 💥 Breaking Changes
+##  Breaking Changes
 
-### ⚠️ Migration Required
+###  Migration Required
 If you're upgrading from v1.x:
 
 1. **Uninstall old version**:
@@ -103,7 +103,7 @@ If you're upgrading from v1.x:
 
 ---
 
-## 📦 Installation
+##  Installation
 
 ### Method 1: OctoPrint Plugin Manager (Recommended)
 1. Open OctoPrint Settings
@@ -129,7 +129,7 @@ pip install octoprint-factor-plugin
 
 ---
 
-## 🐛 Bug Fixes
+## Bug Fixes
 
 - Fixed web navigation button not binding on initial load
 - Fixed button binding when navigating via tabs
@@ -138,7 +138,7 @@ pip install octoprint-factor-plugin
 
 ---
 
-## 📚 Documentation Updates
+##  Documentation Updates
 
 - ✅ [README.md](README.md) - Korean documentation (5-step guide)
 - ✅ [README_EN.md](README_EN.md) - English documentation
@@ -147,7 +147,7 @@ pip install octoprint-factor-plugin
 
 ---
 
-## 🙏 Acknowledgments
+##  Acknowledgments
 
 Special thanks to:
 - FACTOR Team for the redesigned workflow
@@ -156,7 +156,7 @@ Special thanks to:
 
 ---
 
-## 📊 Stats
+##  Stats
 
 - **14 files changed**
 - **481 additions**
@@ -167,23 +167,23 @@ Special thanks to:
 
 ---
 
-## 🔗 Links
+##  Links
 
-- 🌐 **FACTOR Platform**: [https://factor.io.kr](https://factor.io.kr)
-- 📖 **Documentation**: [GitHub Repository](https://github.com/kangbyounggwan/octoprint-factor-plugin)
-- 🐛 **Report Issues**: [GitHub Issues](https://github.com/kangbyounggwan/octoprint-factor-plugin/issues)
-- 💬 **Support**: Contact via FACTOR website
+-  **FACTOR Platform**: [https://factor.io.kr](https://factor.io.kr)
+-  **Documentation**: [GitHub Repository](https://github.com/kangbyounggwan/octoprint-factor-plugin)
+-  **Report Issues**: [GitHub Issues](https://github.com/kangbyounggwan/octoprint-factor-plugin/issues)
+-  **Support**: Contact via FACTOR website
 
 ---
 
-## ⬇️ Download
+## ⬇ Download
 
 - **Source Code**: [v2.0.0.zip](https://github.com/kangbyounggwan/octoprint-factor-plugin/archive/v2.0.0.zip)
 - **Source Code**: [v2.0.0.tar.gz](https://github.com/kangbyounggwan/octoprint-factor-plugin/archive/v2.0.0.tar.gz)
 
 ---
 
-## 🔮 What's Next?
+##  What's Next?
 
 Coming in future versions:
 - [ ] PyPI package publication
