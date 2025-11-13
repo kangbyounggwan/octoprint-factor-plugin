@@ -108,61 +108,6 @@
     padding: 12px 24px;
 }
 
-/* Status Section */
-#settings_plugin_factor_mqtt .status-section {
-    padding: 20px;
-    background: #f9f9f9;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    margin-bottom: 20px;
-}
-
-#settings_plugin_factor_mqtt .status-section h4 {
-    margin-top: 0;
-    margin-bottom: 15px;
-    color: #333;
-}
-
-#settings_plugin_factor_mqtt .status-item {
-    padding: 10px;
-    background: white;
-    border: 1px solid #e0e0e0;
-    border-radius: 3px;
-    margin-bottom: 10px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-#settings_plugin_factor_mqtt .status-item:last-child {
-    margin-bottom: 0;
-}
-
-#settings_plugin_factor_mqtt .status-label {
-    font-weight: bold;
-    color: #555;
-}
-
-#settings_plugin_factor_mqtt .status-value {
-    color: #999;
-}
-
-#settings_plugin_factor_mqtt .status-value.success {
-    color: #468847;
-}
-
-#settings_plugin_factor_mqtt .status-value.success i {
-    color: #468847;
-}
-
-#settings_plugin_factor_mqtt .status-value.error {
-    color: #b94a48;
-}
-
-#settings_plugin_factor_mqtt .status-value.error i {
-    color: #b94a48;
-}
-
 /* Help Section */
 #settings_plugin_factor_mqtt .help-section {
     padding: 20px;

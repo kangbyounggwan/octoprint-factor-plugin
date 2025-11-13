@@ -55,44 +55,11 @@ $(function () {
               });
 
               $img.attr("src", qrUrl);
-
-              // Update status
-              checkStatus();
             }
           })
           .fail(function(xhr) {
             console.error("Failed to get setup URL:", xhr);
             $("#fm-qr-loading").html('<i class="icon-warning-sign"></i><br><span>Failed to load setup URL</span>');
-          });
-      }
-
-      // Check connection status
-      function checkStatus() {
-        OctoPrint.ajax("GET", "plugin/factor_mqtt/status")
-          .done(function(data) {
-            if (data) {
-              // Registered status
-              var registered = data.registered || false;
-              var $regStatus = $("#fm-status-registered");
-              if (registered) {
-                $regStatus.html('<i class="icon-ok"></i> <span data-i18n="setup.status.yes">' + t("setup.status.yes") + '</span>')
-                  .removeClass("error").addClass("success");
-              } else {
-                $regStatus.html('<i class="icon-remove"></i> <span data-i18n="setup.status.no">' + t("setup.status.no") + '</span>')
-                  .removeClass("success").addClass("error");
-              }
-
-              // MQTT status
-              var mqttConnected = data.is_mqtt_connected || false;
-              var $mqttStatus = $("#fm-status-mqtt");
-              if (mqttConnected) {
-                $mqttStatus.html('<i class="icon-ok"></i> <span data-i18n="setup.status.connected">' + t("setup.status.connected") + '</span>')
-                  .removeClass("error").addClass("success");
-              } else {
-                $mqttStatus.html('<i class="icon-remove"></i> <span data-i18n="setup.status.disconnected">' + t("setup.status.disconnected") + '</span>')
-                  .removeClass("success").addClass("error");
-              }
-            }
           });
       }
 
@@ -109,9 +76,6 @@ $(function () {
           $("#fm-refresh-qr").on("click", function() {
             loadQRCode();
           });
-
-          // Auto-refresh status every 10 seconds
-          setInterval(checkStatus, 10000);
         });
       };
     }
