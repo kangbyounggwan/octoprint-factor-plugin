@@ -1,5 +1,209 @@
 /* FACTOR Plugin - QR Code Setup UI */
 
+/* ============================================
+   WIZARD STYLES
+   ============================================ */
+
+#wizard_plugin_factor_mqtt {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 30px;
+}
+
+#wizard_plugin_factor_mqtt .language-selector {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    z-index: 1000;
+}
+
+#wizard_plugin_factor_mqtt #wizard-lang-selector {
+    display: flex;
+    gap: 4px;
+}
+
+#wizard_plugin_factor_mqtt #wizard-lang-selector .btn {
+    padding: 4px 10px;
+    font-size: 12px;
+    line-height: 1.4;
+    border: 1px solid #ccc;
+    background-color: #f5f5f5;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+#wizard_plugin_factor_mqtt #wizard-lang-selector .btn:hover {
+    background-color: #e0e0e0;
+    border-color: #aaa;
+}
+
+#wizard_plugin_factor_mqtt #wizard-lang-selector .btn.active {
+    background-color: #0088cc;
+    color: white;
+    border-color: #0088cc;
+}
+
+#wizard_plugin_factor_mqtt .wizard-header {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+#wizard_plugin_factor_mqtt .wizard-icon {
+    font-size: 80px;
+    margin-bottom: 20px;
+}
+
+#wizard_plugin_factor_mqtt .wizard-header h2 {
+    font-size: 32px;
+    margin-bottom: 10px;
+    color: #333;
+}
+
+#wizard_plugin_factor_mqtt .wizard-header .lead {
+    font-size: 18px;
+    color: #666;
+    margin-bottom: 0;
+}
+
+#wizard_plugin_factor_mqtt .wizard-benefits {
+    margin-bottom: 40px;
+    padding: 25px;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+
+#wizard_plugin_factor_mqtt .wizard-benefits h3 {
+    font-size: 20px;
+    margin-top: 0;
+    margin-bottom: 20px;
+    color: #333;
+}
+
+#wizard_plugin_factor_mqtt .wizard-benefits-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 15px;
+}
+
+#wizard_plugin_factor_mqtt .wizard-benefits-list li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: white;
+    border-radius: 6px;
+    border: 1px solid #e0e0e0;
+}
+
+#wizard_plugin_factor_mqtt .benefit-icon {
+    font-size: 28px;
+    flex-shrink: 0;
+}
+
+#wizard_plugin_factor_mqtt .wizard-qr-section {
+    text-align: center;
+    margin-bottom: 40px;
+    padding: 30px;
+    background: #fff;
+    border: 2px solid #0088cc;
+    border-radius: 8px;
+}
+
+#wizard_plugin_factor_mqtt .wizard-qr-section h3 {
+    font-size: 24px;
+    margin-top: 0;
+    margin-bottom: 15px;
+    color: #0088cc;
+}
+
+#wizard_plugin_factor_mqtt .wizard-qr-section p {
+    font-size: 16px;
+    color: #666;
+    margin-bottom: 25px;
+}
+
+#wizard_plugin_factor_mqtt .wizard-qr-section .qr-container {
+    width: 300px;
+    height: 300px;
+    margin: 0 auto 25px;
+    background: white;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+#wizard_plugin_factor_mqtt #wizard-qr-code {
+    max-width: 100%;
+    max-height: 100%;
+}
+
+#wizard_plugin_factor_mqtt .qr-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    color: #999;
+}
+
+#wizard_plugin_factor_mqtt .wizard-actions {
+    margin-top: 20px;
+}
+
+#wizard_plugin_factor_mqtt #wizard-open-setup {
+    font-size: 18px;
+    padding: 15px 35px;
+    font-weight: bold;
+}
+
+#wizard_plugin_factor_mqtt .wizard-help {
+    padding: 20px;
+    background: #fff9e6;
+    border: 1px solid #ffd966;
+    border-radius: 6px;
+    margin-bottom: 20px;
+}
+
+#wizard_plugin_factor_mqtt .wizard-help h4 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    color: #997700;
+}
+
+#wizard_plugin_factor_mqtt .wizard-footer {
+    text-align: center;
+    padding-top: 20px;
+    border-top: 1px solid #e0e0e0;
+}
+
+@media (max-width: 768px) {
+    #wizard_plugin_factor_mqtt {
+        padding: 20px 15px;
+    }
+
+    #wizard_plugin_factor_mqtt .wizard-header h2 {
+        font-size: 24px;
+    }
+
+    #wizard_plugin_factor_mqtt .wizard-benefits-list {
+        grid-template-columns: 1fr;
+    }
+
+    #wizard_plugin_factor_mqtt .wizard-qr-section .qr-container {
+        width: 250px;
+        height: 250px;
+    }
+}
+
+/* ============================================
+   SETTINGS PAGE STYLES
+   ============================================ */
+
 /* Language Selector */
 #settings_plugin_factor_mqtt .language-selector {
     position: absolute;

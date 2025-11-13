@@ -85,4 +85,84 @@ $(function () {
       dependencies: ["settingsViewModel"],
       elements: ["#settings_plugin_factor_mqtt"]
     });
+
+    // Wizard ViewModel
+    function MqttWizardViewModel(parameters) {
+      var self = this;
+      var t = FactorMQTT_i18n.t;
+
+      var setupUrl = "";
+      var instanceId = "";
+
+      // Load QR code for wizard
+      function loadWizardQRCode() {
+        $("#wizard-qr-loading").show();
+        $("#wizard-qr-code").hide();
+
+        OctoPrint.ajax("GET", "plugin/factor_mqtt/setup-url")
+          .done(function(data) {
+            if (data && data.success) {
+              setupUrl = data.setup_url;
+              instanceId = data.instance_id;
+
+              $("#wizard-open-setup").attr("href", setupUrl);
+
+              var qrUrl = "plugin/factor_mqtt/qrcode?" + Date.now();
+              var $img = $("#wizard-qr-code");
+
+              $img.on("load", function() {
+                $("#wizard-qr-loading").hide();
+                $img.show();
+              }).on("error", function() {
+                $("#wizard-qr-loading").html('<i class="icon-warning-sign"></i><br><span>Failed to load QR code</span>');
+              });
+
+              $img.attr("src", qrUrl);
+            }
+          })
+          .fail(function(xhr) {
+            console.error("Failed to get setup URL:", xhr);
+            $("#wizard-qr-loading").html('<i class="icon-warning-sign"></i><br><span>Failed to load setup URL</span>');
+          });
+      }
+
+      self.onBeforeWizardTabChange = function(next, current) {
+        return true;
+      };
+
+      self.onBeforeWizardFinish = function() {
+        return true;
+      };
+
+      self.onWizardFinish = function() {
+        // Mark as configured (optional)
+      };
+
+      self.onAfterBinding = function() {
+        // Initialize i18n for wizard
+        FactorMQTT_i18n.init(function() {
+          FactorMQTT_i18n.applyTranslations();
+
+          // Initialize language selector for wizard
+          var currentLang = FactorMQTT_i18n.getCurrentLanguage();
+          $("#wizard-lang-selector .btn").removeClass("active");
+          $("#wizard-lang-selector .btn[data-lang='" + currentLang + "']").addClass("active");
+
+          $("#wizard-lang-selector .btn").on("click", function() {
+            var lang = $(this).attr("data-lang");
+            FactorMQTT_i18n.setLanguage(lang);
+            $("#wizard-lang-selector .btn").removeClass("active");
+            $(this).addClass("active");
+          });
+
+          // Load QR code
+          loadWizardQRCode();
+        });
+      };
+    }
+
+    OCTOPRINT_VIEWMODELS.push({
+      construct: MqttWizardViewModel,
+      elements: ["#wizard_plugin_factor_mqtt"]
+    });
 });

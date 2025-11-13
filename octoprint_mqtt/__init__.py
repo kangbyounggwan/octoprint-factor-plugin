@@ -46,7 +46,8 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
                  octoprint.plugin.StartupPlugin,
                  octoprint.plugin.ShutdownPlugin,
                  octoprint.plugin.EventHandlerPlugin,
-                 octoprint.plugin.BlueprintPlugin):
+                 octoprint.plugin.BlueprintPlugin,
+                 octoprint.plugin.WizardPlugin):
     
     def __init__(self):
         super().__init__()
@@ -151,14 +152,26 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         self._logger.info("   (헤더 'X-Api-Key' 필요)")
 
     def get_template_configs(self):
-        return [dict(
-            type="settings",
-            name="FACTOR",
-            template="mqtt_settings.jinja2",
-            custom_bindings=True   # ← 여기 꼭 True
-        )]
-    
-    
+        return [
+            dict(
+                type="settings",
+                name="FACTOR",
+                template="mqtt_settings.jinja2",
+                custom_bindings=True
+            ),
+            dict(
+                type="wizard",
+                template="mqtt_wizard.jinja2",
+                custom_bindings=True
+            )
+        ]
+
+    ##~~ WizardPlugin mixin
+
+    def is_wizard_required(self):
+        # Show wizard if device is not registered yet
+        return not self._settings.get_boolean(["registered"])
+
     ##~~ ShutdownPlugin mixin
     
     def on_shutdown(self):

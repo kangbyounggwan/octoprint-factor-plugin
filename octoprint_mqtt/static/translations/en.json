@@ -1,4 +1,31 @@
 {
+  "wizard": {
+    "title": "Welcome to FACTOR Plugin",
+    "subtitle": "Connect your 3D printer to the FACTOR platform for remote monitoring and control",
+    "benefits": {
+      "title": "In less than 20 seconds, you will have access to:",
+      "remote": "Free & Unlimited Remote Access",
+      "camera": "Full Framerate Webcam Streaming",
+      "notifications": "Print Notifications Via Push, Telegram, Discord, Email & More",
+      "ai": "Free & Unlimited AI Print Failure Detection",
+      "monitoring": "Real-time Printer Monitoring",
+      "more": "So Much More"
+    },
+    "qr": {
+      "title": "Quick Setup with QR Code",
+      "description": "Scan the QR code below with your mobile device to complete setup on the FACTOR web dashboard."
+    },
+    "button": {
+      "setup": "Complete Your FACTOR Setup Now"
+    },
+    "help": {
+      "title": "Need Help?",
+      "description": "You can finish the FACTOR setup from the OctoPrint settings under the FACTOR tab."
+    },
+    "footer": {
+      "skip": "You may skip this wizard and configure FACTOR later from Settings > FACTOR"
+    }
+  },
   "setup": {
     "title": "FACTOR Device Setup",
     "description": "Scan the QR code or click the button below to complete device setup on the FACTOR web dashboard.",
