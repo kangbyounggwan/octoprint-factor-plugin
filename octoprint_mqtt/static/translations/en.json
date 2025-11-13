@@ -1,29 +1,13 @@
 {
   "wizard": {
-    "title": "Welcome to FACTOR Plugin",
-    "subtitle": "Connect your 3D printer to the FACTOR platform for remote monitoring and control",
-    "benefits": {
-      "title": "In less than 20 seconds, you will have access to:",
-      "remote": "Free & Unlimited Remote Access",
-      "camera": "Full Framerate Webcam Streaming",
-      "notifications": "Print Notifications Via Push, Telegram, Discord, Email & More",
-      "ai": "Free & Unlimited AI Print Failure Detection",
-      "monitoring": "Real-time Printer Monitoring",
-      "more": "So Much More"
-    },
-    "qr": {
-      "title": "Quick Setup with QR Code",
-      "description": "Scan the QR code below with your mobile device to complete setup on the FACTOR web dashboard."
-    },
+    "title": "FACTOR",
+    "intro": "Blast off 🚀 with factor.io.kr! Access your full OctoPrint portal, printer controls, camera streams, and plugins from anywhere! FACTOR works on your desktop, laptop, tablet, phone, and your favorite OctoPrint apps!",
+    "tagline": "FACTOR is free, secure, and super easy to setup!",
     "button": {
-      "setup": "Complete Your FACTOR Setup Now"
+      "setup": "Finish Your 20 Second Setup Now!"
     },
     "help": {
-      "title": "Need Help?",
-      "description": "You can finish the FACTOR setup from the OctoPrint settings under the FACTOR tab."
-    },
-    "footer": {
-      "skip": "You may skip this wizard and configure FACTOR later from Settings > FACTOR"
+      "link": "Need help or want to send feedback?"
     }
   },
   "setup": {
@@ -55,107 +39,6 @@
       "step2": "Login to your FACTOR account on the web page",
       "step3": "Complete the device registration and configuration",
       "step4": "Return here to verify the connection status"
-    }
-  },
-  "ui": {
-    "title": "FACTOR Plugin",
-    "login": {
-      "title": "Login",
-      "email": "Email",
-      "password": "Password",
-      "button": "Login",
-      "status": "Logging in...",
-      "error": "Please enter Email and Password",
-      "failed": "Login failed",
-      "serverUnavailable": "FACTOR server is temporarily unavailable. Please try again in a few minutes.",
-      "serverMaintenance": "FACTOR server is under maintenance. Please try again later.",
-      "serverTimeout": "FACTOR server is not responding. Please try again later.",
-      "connectionTimeout": "Connection to FACTOR server timed out. Please check your internet connection.",
-      "connectionError": "Cannot connect to FACTOR server. Please check your internet connection."
-    },
-    "register": {
-      "title": "Device Registration",
-      "select": "Select Device",
-      "new": "New Registration",
-      "instanceId": "Instance ID",
-      "generate": "Generate",
-      "create": "Create",
-      "next": "Next",
-      "status": "Registering...",
-      "error": "Please enter/generate Instance ID",
-      "success": "Registration successful",
-      "failed": "Registration failed",
-      "connection": {
-        "title": "Printer Connection Info",
-        "none": "No printer connection information available"
-      }
-    },
-    "camera": {
-      "title": "Camera Settings",
-      "url": "Stream URL",
-      "test": "Test",
-      "save": "Save",
-      "status": {
-        "saving": "Saving...",
-        "success": "Saved successfully",
-        "failed": "Save failed",
-        "urlRequired": "Please enter URL"
-      }
-    },
-    "mqtt": {
-      "title": "MQTT Settings",
-      "broker": {
-        "host": "Broker Host",
-        "port": "Port",
-        "username": "Username (Optional)",
-        "password": "Password (Optional)"
-      },
-      "tls": {
-        "enable": "Use TLS/SSL",
-        "insecure": "Skip Certificate Verification",
-        "caCert": "CA Certificate Path"
-      },
-      "topic": "Topic Prefix",
-      "qos": "QoS Level",
-      "retain": "Retain Messages",
-      "publish": {
-        "status": "Publish Status",
-        "progress": "Publish Progress",
-        "temperature": "Publish Temperature",
-        "gcode": "Publish G-code",
-        "snapshot": "Publish Snapshot"
-      },
-      "interval": "Status Interval (seconds)",
-      "test": "Connection Test",
-      "save": "Save",
-      "register": "Register",
-      "status": {
-        "testing": "Testing connection...",
-        "success": "Connection test successful!",
-        "failed": "Connection test failed",
-        "connected": "Connected to MQTT broker",
-        "disconnected": "Not connected to MQTT broker",
-        "checking": "Checking connection...",
-        "needLogin": "Login required",
-        "needRegister": "Please complete registration"
-      }
-    },
-    "tabs": {
-      "login": "1. Login",
-      "register": "2. Device Registration",
-      "web": "3. Go to Web"
-    },
-    "web": {
-      "title": "Device Registration Complete!",
-      "description": "Now check your printer on the FACTOR website<br/>and complete the final setup.",
-      "deviceUuid": "Registered Device UUID",
-      "button": "Go to FACTOR Website",
-      "help": "You can configure printer name, notification settings, etc. on the website.",
-      "error": "Device UUID not found. Please complete registration in Step 2."
-    },
-    "messages": {
-      "saveAfterStep3": "You can save after completing Step 3 (Registration).",
-      "loginRequired": "Please login before saving."
     }
   }
 }

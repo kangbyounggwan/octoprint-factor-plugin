@@ -17,80 +17,41 @@
     <div class="wizard-icon">
       🏭
     </div>
-    <h2 data-i18n="wizard.title">Welcome to FACTOR Plugin</h2>
-    <p class="lead" data-i18n="wizard.subtitle">
-      Connect your 3D printer to the FACTOR platform for remote monitoring and control
-    </p>
+    <h2 data-i18n="wizard.title">FACTOR</h2>
   </div>
 
-  <!-- Benefits Section -->
-  <div class="wizard-benefits">
-    <h3 data-i18n="wizard.benefits.title">In less than 20 seconds, you will have access to:</h3>
-    <ul class="wizard-benefits-list">
-      <li>
-        <span class="benefit-icon">📱</span>
-        <span data-i18n="wizard.benefits.remote">Free & Unlimited Remote Access</span>
-      </li>
-      <li>
-        <span class="benefit-icon">📹</span>
-        <span data-i18n="wizard.benefits.camera">Full Framerate Webcam Streaming</span>
-      </li>
-      <li>
-        <span class="benefit-icon">🔔</span>
-        <span data-i18n="wizard.benefits.notifications">Print Notifications Via Push, Telegram, Discord, Email & More</span>
-      </li>
-      <li>
-        <span class="benefit-icon">🤖</span>
-        <span data-i18n="wizard.benefits.ai">Free & Unlimited AI Print Failure Detection</span>
-      </li>
-      <li>
-        <span class="benefit-icon">📊</span>
-        <span data-i18n="wizard.benefits.monitoring">Real-time Printer Monitoring</span>
-      </li>
-      <li>
-        <span class="benefit-icon">🎉</span>
-        <span data-i18n="wizard.benefits.more">So Much More</span>
-      </li>
-    </ul>
-  </div>
-
-  <!-- QR Code Section -->
-  <div class="wizard-qr-section">
-    <h3 data-i18n="wizard.qr.title">Quick Setup with QR Code</h3>
-    <p data-i18n="wizard.qr.description">
-      Scan the QR code below with your mobile device to complete setup on the FACTOR web dashboard.
+  <!-- Main Content -->
+  <div class="wizard-content">
+    <p class="wizard-intro" data-i18n="wizard.intro">
+      Blast off 🚀 with <strong>factor.io.kr</strong>! Access your full OctoPrint portal, printer controls, camera streams, and plugins from anywhere! FACTOR works on your desktop, laptop, tablet, phone, and your favorite OctoPrint apps!
     </p>
 
-    <div class="qr-container">
-      <img id="wizard-qr-code" src="" alt="QR Code" style="display: none;" />
-      <div id="wizard-qr-loading" class="qr-loading">
-        <i class="icon-spinner icon-spin"></i>
-        <span data-i18n="setup.qr.loading">Loading QR Code...</span>
+    <p class="wizard-tagline">
+      <span data-i18n="wizard.tagline">FACTOR is <strong>free, secure, and super easy to setup!</strong></span>
+    </p>
+
+    <!-- QR Code Section -->
+    <div class="wizard-qr-section">
+      <div class="qr-container">
+        <img id="wizard-qr-code" src="" alt="QR Code" style="display: none;" />
+        <div id="wizard-qr-loading" class="qr-loading">
+          <i class="icon-spinner icon-spin"></i>
+          <span data-i18n="setup.qr.loading">Loading QR Code...</span>
+        </div>
       </div>
     </div>
 
+    <!-- Action Button -->
     <div class="wizard-actions">
       <a id="wizard-open-setup" href="#" target="_blank" class="btn btn-primary btn-large">
+        <span data-i18n="wizard.button.setup">Finish Your 20 Second Setup Now!</span>
         <i class="icon-external-link"></i>
-        <span data-i18n="wizard.button.setup">Complete Your FACTOR Setup Now</span>
       </a>
     </div>
-  </div>
 
-  <!-- Help Section -->
-  <div class="wizard-help">
-    <h4 data-i18n="wizard.help.title">Need Help?</h4>
-    <p>
-      <span data-i18n="wizard.help.description">
-        You can finish the FACTOR setup from the OctoPrint settings under the FACTOR tab.
-      </span>
-    </p>
-  </div>
-
-  <!-- Footer Note -->
-  <div class="wizard-footer">
-    <p class="text-muted" data-i18n="wizard.footer.skip">
-      You may skip this wizard and configure FACTOR later from Settings > FACTOR
-    </p>
+    <!-- Help Link -->
+    <div class="wizard-help-link">
+      <a href="#" data-i18n="wizard.help.link">Need help or want to send feedback?</a>
+    </div>
   </div>
 </div>
