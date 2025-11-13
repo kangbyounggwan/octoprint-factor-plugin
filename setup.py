@@ -21,8 +21,6 @@ setup(
     install_requires=[
         "OctoPrint>=1.4.0",
         "paho-mqtt>=2.0.0",
-        "qrcode>=7.0",
-        "Pillow>=8.0.0",
     ],
     python_requires=">=3.8,<4",
 
