@@ -79,8 +79,10 @@ $(function () {
                   instanceId = data.instance_id;
                   console.log("New instance ID generated:", instanceId);
 
-                  // Reload setup URL with new ID
-                  loadSetupUrl();
+                  // Update UI with new values directly
+                  $("#fm-open-setup").attr("href", setupUrl);
+                  $("#fm-setup-url-text").text(setupUrl);
+                  $("#fm-instance-id-text").text(instanceId);
                 }
               })
               .fail(function(xhr) {
