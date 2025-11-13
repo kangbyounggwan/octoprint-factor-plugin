@@ -60,6 +60,8 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         self._camera_proc = None
         self._camera_started_at = None
         self._camera_last_error = None
+        # Temporary instance ID (not saved until registration is complete)
+        self._temp_instance_id = None
     
     ##~~ SettingsPlugin mixin
     
@@ -169,6 +171,12 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         # Show wizard if device is not registered yet
         return not self._settings.get_boolean(["registered"])
 
+    def get_wizard_version(self):
+        return 1
+
+    def get_wizard_details(self):
+        return dict()
+
     ##~~ ShutdownPlugin mixin
     
     def on_shutdown(self):
@@ -263,16 +271,20 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             self._start_snapshot_timer()     # ✅ 여기서 시작
             try:
                 qos = int(self._settings.get(["qos_level"]) or 1)
-                inst = self._settings.get(["instance_id"]) or "unknown"
+                inst = self._settings.get(["instance_id"]) or self._temp_instance_id or "unknown"
 
                 # 고정 토픽만 구독
                 control_topic = f"control/{inst}"
                 gcode_topic = f"octoprint/gcode_in/{inst}"
                 camera_cmd = f"camera/{inst}/cmd"
+                registration_topic = f"device/{inst}/registration"  # 등록 확인 토픽
+
                 self.mqtt_client.subscribe(control_topic, qos=qos)
                 self.mqtt_client.subscribe(gcode_topic, qos=qos)
                 self.mqtt_client.subscribe(camera_cmd, qos=qos)
-                self._logger.info(f"[FACTOR] subscribe: {control_topic} | {gcode_topic} | {camera_cmd} (qos={qos})")
+                self.mqtt_client.subscribe(registration_topic, qos=qos)
+
+                self._logger.info(f"[FACTOR] subscribe: {control_topic} | {gcode_topic} | {camera_cmd} | {registration_topic} (qos={qos})")
             except Exception as e:
                 self._logger.warning(f"[FACTOR] subscribe 실패: {e}")
         else:
@@ -357,6 +369,66 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
                     data = {"type": "camera"}
                 self._handle_control_message(data)
                 return
+
+            # 4) Registration confirmation: device/<instance_id>/registration
+            registration_topic = f"device/{inst}/registration"
+            if self._temp_instance_id:
+                registration_topic_temp = f"device/{self._temp_instance_id}/registration"
+                if topic == registration_topic or topic == registration_topic_temp:
+                    payload = msg.payload.decode("utf-8", errors="ignore") if isinstance(msg.payload, (bytes, bytearray)) else str(msg.payload or "")
+                    try:
+                        data = json.loads(payload or "{}")
+                        status = data.get("status")
+
+                        if status == "registered":
+                            # Save registration permanently
+                            instance_id = self._temp_instance_id or inst
+                            self._settings.set(["instance_id"], instance_id)
+                            self._settings.set(["registered"], True)
+                            self._settings.save()
+
+                            self._temp_instance_id = None
+                            self._logger.info(f"✅ Device registration confirmed via MQTT: {instance_id}")
+
+                            # Unsubscribe from registration topic
+                            self.mqtt_client.unsubscribe(topic)
+
+                            # Send plugin message to update UI
+                            self._plugin_manager.send_plugin_message(
+                                self._identifier,
+                                dict(
+                                    type="registration_confirmed",
+                                    device_name=data.get("device_name"),
+                                    registered_at=data.get("registered_at")
+                                )
+                            )
+
+                        elif status == "timeout" or status == "failed":
+                            # Handle failure/timeout
+                            error_msg = data.get("error", f"Registration {status}")
+                            error_code = data.get("error_code")
+                            self._logger.warning(f"❌ Device registration {status}: {error_msg}" + (f" (code: {error_code})" if error_code else ""))
+
+                            # Unsubscribe from registration topic
+                            self.mqtt_client.unsubscribe(topic)
+
+                            # Clear temporary instance ID - ready for new registration
+                            self._temp_instance_id = None
+
+                            # Send failure notification to UI
+                            self._plugin_manager.send_plugin_message(
+                                self._identifier,
+                                dict(
+                                    type="registration_failed",
+                                    status=status,
+                                    error=error_msg,
+                                    error_code=error_code,
+                                    attempted_at=data.get("attempted_at")
+                                )
+                            )
+                    except Exception as e:
+                        self._logger.error(f"Failed to process registration message: {e}")
+                    return
 
             # 기타 토픽은 무시
             return
@@ -909,16 +981,23 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             self._logger.debug(f"summary 조회 실패: {e}")
             return {}
 
-    def _ensure_instance_id(self):
-        iid = self._settings.get(["instance_id"]) or ""
-        if not iid:
-            try:
-                iid = str(uuid.uuid4())
-                # 메모리에만 보관하고, 등록 성공 시에만 저장하도록 변경
-                self._settings.set(["instance_id"], iid)
-            except Exception:
-                pass
-        return iid
+    def _ensure_instance_id(self, force_new=False):
+        """
+        Get or create instance ID.
+        If force_new=True, always generate a new temporary ID.
+        Temporary IDs are NOT saved until registration is confirmed.
+        """
+        # Check if already registered
+        saved_id = self._settings.get(["instance_id"])
+        if saved_id and not force_new:
+            return saved_id
+
+        # Generate new temporary ID or use existing temporary ID
+        if force_new or not self._temp_instance_id:
+            self._temp_instance_id = str(uuid.uuid4())
+            self._logger.info(f"Generated new temporary instance ID: {self._temp_instance_id}")
+
+        return self._temp_instance_id
 
     ##~~ BlueprintPlugin mixin
 
@@ -977,6 +1056,59 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             }), 200)
         except Exception as e:
             self._logger.error(f"Setup URL generation error: {e}")
+            return make_response(jsonify({"error": str(e)}), 500)
+
+    @octoprint.plugin.BlueprintPlugin.route("/refresh-qr", methods=["POST"])
+    def refresh_qr_code(self):
+        """Generate a new temporary instance ID and QR code"""
+        try:
+            # Force generate new temporary ID
+            new_instance_id = self._ensure_instance_id(force_new=True)
+            setup_url = f"https://factor.io.kr/setup/{new_instance_id}"
+
+            self._logger.info(f"QR code refreshed with new ID: {new_instance_id}")
+
+            return make_response(jsonify({
+                "success": True,
+                "instance_id": new_instance_id,
+                "setup_url": setup_url
+            }), 200)
+        except Exception as e:
+            self._logger.error(f"QR refresh error: {e}")
+            return make_response(jsonify({"error": str(e)}), 500)
+
+    @octoprint.plugin.BlueprintPlugin.route("/confirm-registration", methods=["POST"])
+    def confirm_registration(self):
+        """Confirm registration and save the instance ID permanently"""
+        try:
+            data = request.get_json()
+            instance_id = data.get("instance_id")
+
+            if not instance_id:
+                return make_response(jsonify({"error": "instance_id is required"}), 400)
+
+            # Verify this is our temporary ID
+            if instance_id != self._temp_instance_id:
+                saved_id = self._settings.get(["instance_id"])
+                if instance_id != saved_id:
+                    return make_response(jsonify({"error": "Invalid instance_id"}), 400)
+
+            # Save permanently
+            self._settings.set(["instance_id"], instance_id)
+            self._settings.set(["registered"], True)
+            self._settings.save()
+
+            # Clear temporary ID
+            self._temp_instance_id = None
+
+            self._logger.info(f"Registration confirmed for device: {instance_id}")
+
+            return make_response(jsonify({
+                "success": True,
+                "message": "Registration confirmed"
+            }), 200)
+        except Exception as e:
+            self._logger.error(f"Registration confirmation error: {e}")
             return make_response(jsonify({"error": str(e)}), 500)
 
     @octoprint.plugin.BlueprintPlugin.route("/camera", methods=["GET"])

@@ -72,9 +72,31 @@ $(function () {
           // Load QR code
           loadQRCode();
 
-          // Bind events
+          // Bind events - Refresh QR code with NEW instance ID
           $("#fm-refresh-qr").on("click", function() {
-            loadQRCode();
+            var $btn = $(this);
+            $btn.prop("disabled", true).html('<i class="icon-spinner icon-spin"></i> Refreshing...');
+
+            // Call refresh endpoint to generate NEW instance ID
+            OctoPrint.ajax("POST", "plugin/factor_mqtt/refresh-qr")
+              .done(function(data) {
+                if (data && data.success) {
+                  setupUrl = data.setup_url;
+                  instanceId = data.instance_id;
+                  console.log("New instance ID generated:", instanceId);
+
+                  // Reload QR code with new ID
+                  loadQRCode();
+                }
+              })
+              .fail(function(xhr) {
+                console.error("Failed to refresh QR:", xhr);
+                alert("Failed to refresh QR code. Please try again.");
+              })
+              .always(function() {
+                $btn.prop("disabled", false).html('<i class="icon-refresh"></i> <span data-i18n="setup.button.refresh">Refresh QR Code</span>');
+                FactorMQTT_i18n.applyTranslations();
+              });
           });
         });
       };
@@ -136,6 +158,55 @@ $(function () {
 
       self.onWizardFinish = function() {
         // Mark as configured (optional)
+      };
+
+      // Listen for registration confirmation from plugin (via MQTT)
+      self.onDataUpdaterPluginMessage = function(plugin, data) {
+        if (plugin !== "factor_mqtt") return;
+
+        if (data.type === "registration_confirmed") {
+          console.log("✅ Device registration confirmed via MQTT!");
+
+          // Show success message
+          new PNotify({
+            title: "Registration Complete!",
+            text: "Your FACTOR device has been successfully registered. The wizard will now close.",
+            type: "success",
+            hide: true,
+            delay: 3000
+          });
+
+          // Close wizard after a short delay
+          setTimeout(function() {
+            // Trigger wizard completion
+            if ($("#wizard_dialog").is(":visible")) {
+              $("#wizard_dialog").modal("hide");
+            }
+            // Reload page to refresh state
+            location.reload();
+          }, 3000);
+        }
+
+        if (data.type === "registration_failed") {
+          console.log("❌ Device registration failed:", data.status, data.error);
+
+          var title = data.status === "timeout" ? "Registration Timeout" : "Registration Failed";
+          var message = data.error || "An error occurred during registration.";
+
+          // Show error message
+          new PNotify({
+            title: title,
+            text: message + "<br><br>Please refresh the QR code and try again.",
+            type: "error",
+            hide: true,
+            delay: 5000
+          });
+
+          // Reload QR code after delay to get new instance ID
+          setTimeout(function() {
+            loadWizardQRCode();
+          }, 5000);
+        }
       };
 
       self.onAfterBinding = function() {
