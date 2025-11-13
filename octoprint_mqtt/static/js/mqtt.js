@@ -66,6 +66,19 @@ $(function () {
           // Load setup URL
           loadSetupUrl();
 
+          // Bind "Open Setup Page" button click
+          $("#fm-open-setup").on("click", function() {
+            // Call start-setup API to subscribe to MQTT topics
+            OctoPrint.ajax("POST", "plugin/factor_mqtt/start-setup")
+              .done(function() {
+                console.log("Started setup - subscribed to registration topic");
+              })
+              .fail(function(xhr) {
+                console.error("Failed to start setup:", xhr);
+              });
+            // Continue with opening the URL (don't prevent default)
+          });
+
           // Bind events - Refresh setup URL with NEW instance ID
           $("#fm-refresh-qr").on("click", function() {
             var $btn = $(this);

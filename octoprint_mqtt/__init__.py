@@ -1031,9 +1031,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             # Only save after registration is confirmed
             instance_id = self._ensure_instance_id(force_new=True)
 
-            # Re-subscribe to MQTT topics with new instance_id
-            self._subscribe_mqtt_topics()
-
+            # DO NOT subscribe here - subscribe only when button is clicked
             setup_url = f"https://factor.io.kr/setup/{instance_id}"
 
             return make_response(jsonify({
@@ -1045,6 +1043,21 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             self._logger.error(f"Setup URL generation error: {e}")
             return make_response(jsonify({"error": str(e)}), 500)
 
+    @octoprint.plugin.BlueprintPlugin.route("/start-setup", methods=["POST"])
+    def start_setup(self):
+        """Called when user clicks 'Open Setup Page' button - subscribe to MQTT topics"""
+        try:
+            # Subscribe to MQTT topics with current temporary instance_id
+            self._subscribe_mqtt_topics()
+
+            return make_response(jsonify({
+                "success": True,
+                "message": "Subscribed to registration topic"
+            }), 200)
+        except Exception as e:
+            self._logger.error(f"Start setup error: {e}")
+            return make_response(jsonify({"error": str(e)}), 500)
+
     @octoprint.plugin.BlueprintPlugin.route("/refresh-qr", methods=["POST"])
     def refresh_qr_code(self):
         """Generate a new temporary instance ID and QR code"""
@@ -1052,9 +1065,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             # Force generate new temporary ID
             new_instance_id = self._ensure_instance_id(force_new=True)
 
-            # Re-subscribe to MQTT topics with new instance_id
-            self._subscribe_mqtt_topics()
-
+            # DO NOT subscribe here - wait for button click
             setup_url = f"https://factor.io.kr/setup/{new_instance_id}"
 
             self._logger.info(f"QR code refreshed with new ID: {new_instance_id}")
