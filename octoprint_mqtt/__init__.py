@@ -1027,9 +1027,9 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
     def get_setup_url(self):
         """Get the setup URL for this device"""
         try:
-            # Always generate new temporary instance ID (not saved)
+            # Get existing temporary ID or create new one (not saved)
             # Only save after registration is confirmed
-            instance_id = self._ensure_instance_id(force_new=True)
+            instance_id = self._ensure_instance_id(force_new=False)
 
             # DO NOT subscribe here - subscribe only when button is clicked
             setup_url = f"https://factor.io.kr/setup/{instance_id}"
