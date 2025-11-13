@@ -263,30 +263,52 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             self.is_connected = False
             self._logger.info("MQTT 클라이언트 연결이 종료되었습니다.")
     
+    def _subscribe_mqtt_topics(self):
+        """Subscribe to MQTT topics using current instance_id"""
+        if not self.is_connected or not self.mqtt_client:
+            self._logger.warning("Cannot subscribe: MQTT not connected")
+            return
+
+        try:
+            qos = int(self._settings.get(["qos_level"]) or 1)
+            inst = self._settings.get(["instance_id"]) or self._temp_instance_id or "unknown"
+
+            # Unsubscribe from old topics if they exist
+            if hasattr(self, '_current_subscribed_id') and self._current_subscribed_id != inst:
+                old_inst = self._current_subscribed_id
+                old_topics = [
+                    f"control/{old_inst}",
+                    f"octoprint/gcode_in/{old_inst}",
+                    f"camera/{old_inst}/cmd",
+                    f"device/{old_inst}/registration"
+                ]
+                for topic in old_topics:
+                    self.mqtt_client.unsubscribe(topic)
+                self._logger.info(f"[FACTOR] Unsubscribed from old topics with ID: {old_inst}")
+
+            # Subscribe to new topics
+            control_topic = f"control/{inst}"
+            gcode_topic = f"octoprint/gcode_in/{inst}"
+            camera_cmd = f"camera/{inst}/cmd"
+            registration_topic = f"device/{inst}/registration"
+
+            self.mqtt_client.subscribe(control_topic, qos=qos)
+            self.mqtt_client.subscribe(gcode_topic, qos=qos)
+            self.mqtt_client.subscribe(camera_cmd, qos=qos)
+            self.mqtt_client.subscribe(registration_topic, qos=qos)
+
+            self._current_subscribed_id = inst
+            self._logger.info(f"[FACTOR] Subscribed to topics with ID: {inst}")
+        except Exception as e:
+            self._logger.warning(f"[FACTOR] Subscribe failed: {e}")
+
     def _on_mqtt_connect(self, client, userdata, flags, rc, properties=None, *args, **kwargs):
         rc_i = _as_code(rc)
         self.is_connected = (rc_i == 0)
         if self.is_connected:
             self._logger.info("MQTT 브로커 연결 OK")
             self._start_snapshot_timer()     # ✅ 여기서 시작
-            try:
-                qos = int(self._settings.get(["qos_level"]) or 1)
-                inst = self._settings.get(["instance_id"]) or self._temp_instance_id or "unknown"
-
-                # 고정 토픽만 구독
-                control_topic = f"control/{inst}"
-                gcode_topic = f"octoprint/gcode_in/{inst}"
-                camera_cmd = f"camera/{inst}/cmd"
-                registration_topic = f"device/{inst}/registration"  # 등록 확인 토픽
-
-                self.mqtt_client.subscribe(control_topic, qos=qos)
-                self.mqtt_client.subscribe(gcode_topic, qos=qos)
-                self.mqtt_client.subscribe(camera_cmd, qos=qos)
-                self.mqtt_client.subscribe(registration_topic, qos=qos)
-
-                self._logger.info(f"[FACTOR] subscribe: {control_topic} | {gcode_topic} | {camera_cmd} | {registration_topic} (qos={qos})")
-            except Exception as e:
-                self._logger.warning(f"[FACTOR] subscribe 실패: {e}")
+            self._subscribe_mqtt_topics()
         else:
             self._logger.error(f"MQTT 연결 실패 rc={rc}")
 
@@ -1009,6 +1031,9 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             # Only save after registration is confirmed
             instance_id = self._ensure_instance_id(force_new=True)
 
+            # Re-subscribe to MQTT topics with new instance_id
+            self._subscribe_mqtt_topics()
+
             setup_url = f"https://factor.io.kr/setup/{instance_id}"
 
             return make_response(jsonify({
@@ -1026,6 +1051,10 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         try:
             # Force generate new temporary ID
             new_instance_id = self._ensure_instance_id(force_new=True)
+
+            # Re-subscribe to MQTT topics with new instance_id
+            self._subscribe_mqtt_topics()
+
             setup_url = f"https://factor.io.kr/setup/{new_instance_id}"
 
             self._logger.info(f"QR code refreshed with new ID: {new_instance_id}")
