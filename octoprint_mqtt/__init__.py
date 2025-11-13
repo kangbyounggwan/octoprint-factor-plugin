@@ -704,9 +704,8 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
 
         # 스트림 이름 & 서버 주소
         name = (opts.get("name") or "cam").strip()
-        self._logger.info(f"[CAMERA] Stream name validation - name: '{name}', length: {len(name)}, opts.get('name'): '{opts.get('name')}'")
-        # Validate stream name (alphanumeric + underscore only)
-        if not re.match(r'^[a-zA-Z0-9_]+$', name) or len(name) > 50:
+        # Validate stream name (alphanumeric + underscore + hyphen)
+        if not re.match(r'^[a-zA-Z0-9_-]+$', name) or len(name) > 50:
             self._logger.error(f"[CAMERA] Stream name validation failed - name: '{name}', length: {len(name)}")
             raise ValueError("invalid stream name")
 
