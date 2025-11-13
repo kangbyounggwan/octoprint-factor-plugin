@@ -1372,7 +1372,8 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
         # 스냅샷 만들어 퍼블리시 (이미 만들었던 함수 재사용)
         try:
             payload = self._make_snapshot()
-            inst = self._settings.get(["instance_id"]) or "unknown"
+            # Use temporary ID first during setup, then saved ID for registered devices
+            inst = self._temp_instance_id or self._settings.get(["instance_id"]) or "unknown"
             topic = f"{self._settings.get(['topic_prefix']) or 'octoprint'}/status/{inst}"
             self._publish_message(topic, json.dumps(payload))
             self._gc_expired_jobs()
