@@ -23,7 +23,7 @@ from octoprint.util import RepeatedTimer
 
 __plugin_name__ = "FACTOR Plugin"
 __plugin_pythoncompat__ = ">=3.8,<4"
-__plugin_version__ = "2.6.1"
+__plugin_version__ = "2.6.2"
 __plugin_identifier__ = "octoprint_factor"
 
         
@@ -68,7 +68,7 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
     
     def get_settings_defaults(self):
         return dict(
-            broker_host="mqtt.factor.io.kr",
+            broker_host="factor.io.kr",
             broker_port=8883,
             broker_username="",
             broker_password="",
