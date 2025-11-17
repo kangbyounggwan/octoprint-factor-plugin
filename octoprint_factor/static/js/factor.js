@@ -30,7 +30,7 @@ $(function () {
 
       // Load setup URL with instance ID
       function loadSetupUrl() {
-        OctoPrint.ajax("GET", "plugin/factor_mqtt/setup-url")
+        OctoPrint.ajax("GET", "plugin/octoprint_factor/setup-url")
           .done(function(data) {
             if (data && data.success) {
               setupUrl = data.setup_url;
@@ -59,7 +59,7 @@ $(function () {
           // Bind "Open Setup Page" button click
           $("#fm-open-setup").on("click", function() {
             // Call start-setup API to subscribe to MQTT topics
-            OctoPrint.ajax("POST", "plugin/factor_mqtt/start-setup")
+            OctoPrint.ajax("POST", "plugin/octoprint_factor/start-setup")
               .done(function() {
                 console.log("Started setup - subscribed to registration topic");
               })
@@ -88,7 +88,7 @@ $(function () {
 
       // Load setup URL with instance ID for wizard
       function loadWizardSetupUrl() {
-        OctoPrint.ajax("GET", "plugin/factor_mqtt/setup-url")
+        OctoPrint.ajax("GET", "plugin/octoprint_factor/setup-url")
           .done(function(data) {
             if (data && data.success) {
               setupUrl = data.setup_url;

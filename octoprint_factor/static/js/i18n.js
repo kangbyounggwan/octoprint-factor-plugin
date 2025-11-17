@@ -11,17 +11,18 @@
     // Load translations
     function loadTranslations(lang, callback) {
         // OctoPrint plugin asset URL format
-        var url = "plugin/factor_mqtt/static/translations/" + lang + ".json?" + Date.now();
+        var url = "plugin/octoprint_factor/static/translations/" + lang + ".json?" + Date.now();
         $.ajax({
             url: url,
             dataType: "json",
             cache: false,
             success: function(data) {
                 translations[lang] = data;
+                console.log("Loaded translations for " + lang + ":", data);
                 if (callback) callback();
             },
-            error: function() {
-                console.warn("Failed to load translations for " + lang);
+            error: function(xhr, status, error) {
+                console.error("Failed to load translations for " + lang + ":", status, error, "URL:", url);
                 if (callback) callback();
             }
         });
@@ -96,7 +97,14 @@
         $("[data-i18n]").each(function() {
             var $el = $(this);
             var key = $el.attr("data-i18n");
-            $el.text(t(key));
+            var translated = t(key);
+
+            // Check if the translated text contains HTML
+            if (translated.indexOf('<') !== -1) {
+                $el.html(translated);
+            } else {
+                $el.text(translated);
+            }
         });
 
         // Translate placeholders
