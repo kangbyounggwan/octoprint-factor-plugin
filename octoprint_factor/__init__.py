@@ -23,7 +23,7 @@ from octoprint.util import RepeatedTimer
 
 __plugin_name__ = "FACTOR Plugin"
 __plugin_pythoncompat__ = ">=3.8,<4"
-__plugin_version__ = "2.6.3"
+__plugin_version__ = "2.6.5"
 __plugin_identifier__ = "octoprint_factor"
 
         
