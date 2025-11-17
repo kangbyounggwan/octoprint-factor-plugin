@@ -1,5 +1,5 @@
 include README.md
 include requirements.txt
 include LICENSE
-recursive-include octoprint_mqtt/static *
-recursive-include octoprint_mqtt/templates *
+recursive-include octoprint_factor/static *
+recursive-include octoprint_factor/templates *

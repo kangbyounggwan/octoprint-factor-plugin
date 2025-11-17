@@ -1,28 +1,30 @@
 # -*- coding: utf-8 -*-
-import json
-import subprocess, shlex, os, signal
-from flask import request  # Blueprint에서 사용
-import octoprint.plugin
-from octoprint.filemanager import FileDestinations
-
-from octoprint.util import RepeatedTimer
-from flask import jsonify, make_response
-import flask
-import requests
-import re
-import uuid
-import tempfile
 import base64
-import io
-import time
 import hashlib
+import io
+import json
+import os
+import re
+import shlex
+import signal
+import subprocess
+import tempfile
+import time
+import uuid
+
+import flask
+import octoprint.plugin
+import requests
+from flask import jsonify, make_response, request
+from octoprint.filemanager import FileDestinations
+from octoprint.util import RepeatedTimer
 
 
 
 __plugin_name__ = "FACTOR Plugin"
 __plugin_pythoncompat__ = ">=3.8,<4"
-__plugin_version__ = "2.0.0"
-__plugin_identifier__ = "factor_mqtt"
+__plugin_version__ = "2.6.1"
+__plugin_identifier__ = "octoprint_factor"
 
         
 def _as_code(x):
@@ -35,18 +37,17 @@ def _as_code(x):
         s = (str(x) if x is not None else "").strip().lower()
         if s in ("success", "normal disconnection"):
             return 0
-        import re
         m = re.search(r"(\d+)", s)
         return int(m.group(1)) if m else -1
 
 
-class MqttPlugin(octoprint.plugin.SettingsPlugin,
-                 octoprint.plugin.AssetPlugin,
-                 octoprint.plugin.TemplatePlugin,
-                 octoprint.plugin.StartupPlugin,
-                 octoprint.plugin.ShutdownPlugin,
-                 octoprint.plugin.EventHandlerPlugin,
-                 octoprint.plugin.BlueprintPlugin,
+class FactorPlugin(octoprint.plugin.SettingsPlugin,
+                   octoprint.plugin.AssetPlugin,
+                   octoprint.plugin.TemplatePlugin,
+                   octoprint.plugin.StartupPlugin,
+                   octoprint.plugin.ShutdownPlugin,
+                   octoprint.plugin.EventHandlerPlugin,
+                   octoprint.plugin.BlueprintPlugin,
                  octoprint.plugin.WizardPlugin):
     
     def __init__(self):
@@ -67,14 +68,14 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
     
     def get_settings_defaults(self):
         return dict(
-            broker_host="localhost",
-            broker_port=1883,
+            broker_host="mqtt.factor.io.kr",
+            broker_port=8883,
             broker_username="",
             broker_password="",
-            broker_use_tls=False,
+            broker_use_tls=True,
             broker_tls_insecure=False,
             broker_tls_ca_cert="",
-            topic_prefix="octoprint",   # JS와 일치!
+            topic_prefix="octoprint",
             qos_level=0,
             retain_messages=False,
             publish_status=True,
@@ -110,8 +111,8 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
 
     def get_assets(self):
         return dict(
-            js=["js/i18n.js", "js/mqtt.js"],
-            css=["css/mqtt.css"]
+            js=["js/i18n.js", "js/factor.js"],
+            css=["css/factor.css"]
         )
     
     ##~~ TemplatePlugin mixin
@@ -155,12 +156,12 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
             dict(
                 type="settings",
                 name="FACTOR",
-                template="mqtt_settings.jinja2",
+                template="factor_settings.jinja2",
                 custom_bindings=True
             ),
             dict(
                 type="wizard",
-                template="mqtt_wizard.jinja2",
+                template="factor_wizard.jinja2",
                 custom_bindings=True
             )
         ]
@@ -1384,7 +1385,7 @@ class MqttPlugin(octoprint.plugin.SettingsPlugin,
 
 def __plugin_load__():
     global __plugin_implementation__
-    __plugin_implementation__ = MqttPlugin()
+    __plugin_implementation__ = FactorPlugin()
 
     global __plugin_hooks__
     __plugin_hooks__ = {
