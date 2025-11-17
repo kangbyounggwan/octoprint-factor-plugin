@@ -23,7 +23,7 @@ from octoprint.util import RepeatedTimer
 
 __plugin_name__ = "FACTOR Plugin"
 __plugin_pythoncompat__ = ">=3.8,<4"
-__plugin_version__ = "2.6.2"
+__plugin_version__ = "2.6.3"
 __plugin_identifier__ = "octoprint_factor"
 
         
@@ -105,7 +105,7 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
         octoprint.plugin.SettingsPlugin.on_settings_save(self, data)
         self._disconnect_mqtt()
         self._connect_mqtt()
-        # 타이머는 연결 성공 시 자동으로 시작됨
+        # Timer will start automatically on successful connection
     
     ##~~ AssetPlugin mixin
 
@@ -121,25 +121,25 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
         try:
             self._log_api_endpoints(host, port)
         except Exception as e:
-            self._logger.warning("엔드포인트 로그 중 오류: %s", e)
+            self._logger.warning("Error logging endpoints: %s", e)
     
     def on_after_startup(self):
-        """시작 후 초기화 작업"""
-        # 더 이상 busy-wait 금지. 필요하면 그냥 타이머를 미리 켜두고
-        # tick에서 is_connected를 확인하게 해도 됩니다.
+        """Post-startup initialization tasks"""
+        # No busy-wait. Timer can be started early if needed
+        # and tick can check is_connected status
         pass
 
 
-    # --- 여기부터 유틸 메서드 추가 ---
+    # --- Utility methods below ---
     def _log_api_endpoints(self, host: str, port: int):
         """
-        플러그인 로드 시 접근 가능한 API 엔드포인트를 콘솔(octoprint.log)에 출력
+        Log available API endpoints to console (octoprint.log) on plugin load
         """
-        # reverse proxy 등으로 baseUrl 이 설정된 경우 고려
+        # Consider baseUrl set by reverse proxy, etc.
         base_url = self._settings.global_get(["server", "baseUrl"]) or ""
         base_url = base_url.rstrip("/")
 
-        # 실제로 바인딩된 내부 주소 기준 (OctoPrint 서비스 관점)
+        # Based on actual internal binding address (OctoPrint service perspective)
         internal_base = f"http://{host}:{port}{base_url}"
         pid = __plugin_identifier__
 
@@ -149,7 +149,7 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
         self._logger.info("[FACTOR] REST endpoints ready:")
         self._logger.info(" - GET  %s", status_url)
         self._logger.info(" - POST %s", test_url)
-        self._logger.info("   (헤더 'X-Api-Key' 필요)")
+        self._logger.info("   (header 'X-Api-Key' required)")
 
     def get_template_configs(self):
         return [
@@ -209,13 +209,13 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
 
             self.mqtt_client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
 
-            # 인증 정보 설정
+            # Set authentication credentials
             username = self._settings.get(["broker_username"])
             password = self._settings.get(["broker_password"])
             if username:
                 self.mqtt_client.username_pw_set(username, password)
 
-            # TLS/SSL 설정
+            # TLS/SSL configuration
             use_tls = self._settings.get(["broker_use_tls"])
             if use_tls:
                 tls_insecure = self._settings.get(["broker_tls_insecure"])
@@ -225,36 +225,36 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                 if tls_insecure:
                     tls_context.check_hostname = False
                     tls_context.verify_mode = ssl.CERT_NONE
-                    self._logger.warning("MQTT TLS 인증서 검증이 비활성화되었습니다. 프로덕션 환경에서는 권장하지 않습니다.")
+                    self._logger.warning("MQTT TLS certificate verification is disabled. Not recommended for production environments.")
                 elif ca_cert:
                     tls_context.load_verify_locations(cafile=ca_cert)
 
                 self.mqtt_client.tls_set_context(tls_context)
-                self._logger.info("MQTT TLS/SSL이 활성화되었습니다.")
+                self._logger.info("MQTT TLS/SSL enabled.")
 
-            # 콜백 함수 설정
+            # Set callback functions
             self.mqtt_client.on_connect = self._on_mqtt_connect
             self.mqtt_client.on_disconnect = self._on_mqtt_disconnect
             self.mqtt_client.on_publish = self._on_mqtt_publish
             self.mqtt_client.on_log = self._on_mqtt_log
             self.mqtt_client.on_message = self._on_mqtt_message
 
-            # 재연결 설정
+            # Reconnection settings
             self.mqtt_client.reconnect_delay_set(min_delay=1, max_delay=120)
 
-            # 비동기 연결
+            # Asynchronous connection
             host = self._settings.get(["broker_host"])
             port = int(self._settings.get(["broker_port"]))
             protocol = "mqtts" if use_tls else "mqtt"
-            # 사용자명은 로그에 표시하지 않음 (보안)
-            self._logger.info(f"MQTT 비동기 연결 시도: {protocol}://{host}:{port}")
+            # Username not displayed in logs (security)
+            self._logger.info(f"Attempting MQTT async connection: {protocol}://{host}:{port}")
 
-            # connect_async로 비동기 연결 시작
+            # Start async connection with connect_async
             self.mqtt_client.connect_async(host, port, 60)
             self.mqtt_client.loop_start()
 
         except Exception as e:
-            self._logger.error(f"MQTT 연결 실패: {e}")
+            self._logger.error(f"MQTT connection failed: {e}")
     
     def _disconnect_mqtt(self):
         if self.mqtt_client:
@@ -262,7 +262,7 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             self.mqtt_client.disconnect()
             self.mqtt_client = None
             self.is_connected = False
-            self._logger.info("MQTT 클라이언트 연결이 종료되었습니다.")
+            self._logger.info("MQTT client disconnected.")
     
     def _subscribe_mqtt_topics(self):
         """Subscribe to MQTT topics using current instance_id"""
@@ -308,18 +308,18 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
         rc_i = _as_code(rc)
         self.is_connected = (rc_i == 0)
         if self.is_connected:
-            self._logger.info("MQTT 브로커 연결 OK")
-            self._start_snapshot_timer()     # ✅ 여기서 시작
+            self._logger.info("MQTT broker connection OK")
+            self._start_snapshot_timer()     # Start here
             self._subscribe_mqtt_topics()
         else:
-            self._logger.error(f"MQTT 연결 실패 rc={rc}")
+            self._logger.error(f"MQTT connection failed rc={rc}")
 
     def _on_mqtt_disconnect(self, client, userdata, rc, properties=None, *args, **kwargs):
         rc_i = _as_code(rc)
         self.is_connected = False
-        self._logger.warning(f"MQTT 연결 끊김 rc={rc}")
-        # 타이머는 유지해도 되고 멈춰도 됨. 유지하면 재연결 후 자동 퍼블리시됨.
-        # 멈추고 싶다면 아래 주석 해제:
+        self._logger.warning(f"MQTT connection lost rc={rc}")
+        # Timer can be kept running or stopped. Keeping it allows auto-publish after reconnect
+        # Uncomment below to stop timer:
         # self._stop_snapshot_timer()
     
     def _on_mqtt_publish(self, client, userdata, mid, *args, **kwargs):
@@ -345,7 +345,7 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             self._logger.debug(f"MQTT publish mid={mid}")
         
     def _on_mqtt_log(self, client, userdata, level, buf):
-        """MQTT 로그 콜백 - 연결 상태 디버깅용"""
+        """MQTT log callback - for connection debugging"""
         if level == 1:  # DEBUG level
             self._logger.debug(f"MQTT: {buf}")
         elif level == 2:  # INFO level
@@ -474,18 +474,18 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                         self._logger.error(f"Failed to process registration message: {e}")
                     return
 
-            # 기타 토픽은 무시
+            # Ignore other topics
             return
         except Exception as e:
-            self._logger.exception(f"[FACTOR] on_message 처리 오류: {e}")
+            self._logger.exception(f"[FACTOR] on_message processing error: {e}")
 
     def _handle_gcode_message(self, data: dict):
-        # 위임: 모듈로 분리된 구현 사용
+        # Delegate to modularized implementation
         try:
             from .mqtt_gcode import handle_gcode_message as _impl
             _impl(self, data)
         except Exception as e:
-            self._logger.exception(f"GCODE 핸들러 오류: {e}")
+            self._logger.exception(f"GCODE handler error: {e}")
 
     def _handle_control_message(self, data: dict):
         t = (data.get("type") or "").lower()
@@ -556,9 +556,9 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             res = _set_temp(self, tool, temperature, wait) if _set_temp else {"error": "control module unavailable"}
             self._logger.info(f"[CONTROL] set_temperature tool={tool} temp={temperature} wait={wait} -> {res}")
             return
-        self._logger.warning(f"[CONTROL] 알 수 없는 type={t}")
+        self._logger.warning(f"[CONTROL] unknown type={t}")
 
-    # finalize 함수는 모듈 내로 이동
+    # finalize function moved to module
 
     def _gc_expired_jobs(self, now: float = None):
         try:
@@ -572,25 +572,25 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             for job_id in expired:
                 self._gcode_jobs.pop(job_id, None)
             if expired:
-                self._logger.warning(f"[FACTOR] 만료된 job 정리: {expired}")
+                self._logger.warning(f"[FACTOR] Cleared expired jobs: {expired}")
         except Exception as e:
-            self._logger.error(f"[FACTOR] job 정리 중 오류: {e}")
+            self._logger.error(f"[FACTOR] Error cleaning up jobs: {e}")
     
     def _check_mqtt_connection_status(self):
-        """MQTT 연결 상태를 확인합니다."""
+        """Check MQTT connection status."""
         if not self.mqtt_client:
             return False
-        
+
         try:
-            # 연결 상태 확인
+            # Check connection status
             if self.mqtt_client.is_connected():
                 return True
             else:
-                # 연결되지 않은 경우 로그만 출력 (재연결은 자동으로 처리됨)
-                self._logger.debug("MQTT 연결이 끊어져 있습니다.")
+                # If not connected, only log (reconnect is handled automatically)
+                self._logger.debug("MQTT connection is down.")
                 return False
         except Exception as e:
-            self._logger.error(f"MQTT 연결 상태 확인 중 오류: {e}")
+            self._logger.error(f"Error checking MQTT connection status: {e}")
             return False
     
     def _publish_status(self, payload, topic_prefix):
@@ -639,17 +639,17 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             qos = self._settings.get(["qos_level"])
             retain = self._settings.get(["retain_messages"])
             result = self.mqtt_client.publish(topic, message, qos=qos, retain=retain)
-            
+
             if result.rc == mqtt.MQTT_ERR_SUCCESS:
-                self._logger.debug(f"메시지 발행 성공: {topic}")
+                self._logger.debug(f"Message published successfully: {topic}")
             else:
-                self._logger.error(f"메시지 발행 실패: {topic}, 오류 코드: {result.rc}")
-                
+                self._logger.error(f"Message publish failed: {topic}, error code: {result.rc}")
+
         except Exception as e:
-            self._logger.error(f"메시지 발행 중 오류 발생: {e}")
+            self._logger.error(f"Error publishing message: {e}")
     
     # ---- Camera helpers ----
-    # WebRTC(MediaMTX) 전용으로 카메라 파이프라인을 구성합니다.
+    # Configure camera pipeline specifically for WebRTC(MediaMTX)
     @staticmethod
     def _safe_int(x, default=0):
         try:
@@ -667,13 +667,13 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
 
     def _pick_encoder(self, encoder_opt: str) -> list:
         enc = (encoder_opt or "").lower()
-        # Raspberry Pi (Bullseye 이후): v4l2m2m
+        # Raspberry Pi (Bullseye and later): v4l2m2m
         if enc in ("v4l2m2m", "h264_v4l2m2m", "v4l2"):
             return ["-c:v", "h264_v4l2m2m"]
-        # 일부 구형/커스텀: omx
+        # Some older/custom systems: omx
         if enc in ("omx", "h264_omx"):
             return ["-c:v", "h264_omx"]
-        # 기본값: 소프트웨어 인코더
+        # Default: software encoder
         return ["-c:v", "libx264", "-tune", "zerolatency"]
 
     def _validate_url(self, url: str) -> bool:
@@ -703,7 +703,7 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
         if not self._validate_url(input_url):
             raise ValueError("invalid or potentially dangerous input URL")
 
-        # 스트림 이름 & 서버 주소
+        # Stream name & server address
         name = (opts.get("name") or "cam").strip()
         # Validate stream name (alphanumeric + underscore + hyphen)
         if not re.match(r'^[a-zA-Z0-9_-]+$', name) or len(name) > 50:
@@ -725,7 +725,7 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
 
         rtsp_url = f"{rtsp_base}/{name}"
 
-        # 화질/프레임/비트레이트 (범위 검증 추가)
+        # Quality/frame rate/bitrate (with range validation)
         fps       = max(0, min(60, self._safe_int(opts.get("fps", 0))))  # 0-60
         width     = max(0, min(3840, self._safe_int(opts.get("width", 0))))  # 0-3840 (4K)
         height    = max(0, min(2160, self._safe_int(opts.get("height", 0))))  # 0-2160 (4K)
@@ -738,7 +738,7 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
         low_lat   = self._safe_bool(opts.get("lowLatency", True))
         force_mj  = self._safe_bool(opts.get("forceMjpeg", False))
 
-        # 기본 저지연/네트워크 복구 옵션들(중복 제거)
+        # Basic low-latency/network recovery options (duplicates removed)
         cmd = [
             "ffmpeg",
             "-hide_banner", "-loglevel", "info",
@@ -750,19 +750,19 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
         if low_lat:
             cmd += ["-flags", "low_delay"]
 
-        # 입력 프로토콜별 최적화
+        # Input protocol specific optimizations
         if input_url.startswith("/dev/video"):
             cmd += ["-f", "v4l2"]
         elif input_url.startswith("rtsp://"):
             cmd += ["-rtsp_transport", "tcp"]
 
-        # HTTP MJPEG일 때 명시
+        # Specify for HTTP MJPEG
         if force_mj and input_url.startswith(("http://", "https://")):
             cmd += ["-f", "mjpeg"]
 
         cmd += ["-i", input_url]
 
-        # 필터 체인: fps / 스케일 / 픽셀포맷
+        # Filter chain: fps / scale / pixel format
         vf_chain = []
         if fps > 0:
             vf_chain.append(f"fps={fps}")
@@ -771,13 +771,13 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
         vf_chain.append("format=yuv420p")
         cmd += ["-vf", ",".join(vf_chain)]
 
-        # 인코더
+        # Encoder
         cmd += self._pick_encoder(encoder)
 
-        # 키프레임 길이(GOP): WebRTC용으로 2초 정도 권장
+        # Keyframe interval (GOP): Recommended ~2s for WebRTC
         gop = (fps * 2) if fps > 0 else 50
 
-        # 레이트컨트롤/프로파일
+        # Rate control/profile
         cmd += [
             "-preset", "veryfast",
             "-profile:v", "baseline",
@@ -785,13 +785,13 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             "-b:v", f"{bitrate_k}k",
             "-maxrate", f"{int(bitrate_k * 11 / 10)}k",
             "-bufsize", f"{bitrate_k}k",
-            "-an",  # 오디오 제거
+            "-an",  # Remove audio
         ]
 
-        # 출력: RTSP Publish → MediaMTX
+        # Output: RTSP Publish → MediaMTX
         cmd += ["-f", "rtsp", "-rtsp_transport", "tcp", rtsp_url]
 
-        # 프론트에서 바로 볼 수 있는 WebRTC URL 힌트(메시지에 실어 보냄)
+        # WebRTC URL hint for frontend (included in message)
         extra = {
             "play_url_webrtc": f"{webrtc_base}/{name}/",
             "publish_url_rtsp": rtsp_url,
@@ -818,7 +818,7 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
 
     def _start_ffmpeg_subprocess(self, opts: dict):
         if self._camera_proc and self._camera_proc.poll() is None:
-            # 이미 실행 중이면 최근 URL만 갱신해서 반환
+            # If already running, just update latest URL and return
             built = self._build_camera_cmd(opts)
             if isinstance(built, tuple):
                 _, extra = built
@@ -832,17 +832,17 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             else:
                 cmd, extra = built, {}
 
-            # 플랫폼별 프로세스 그룹 설정
+            # Platform-specific process group settings
             import sys
             popen_kwargs = {
                 "stdout": subprocess.DEVNULL,
                 "stderr": subprocess.STDOUT
             }
 
-            # Unix/Linux: 프로세스 그룹 생성
+            # Unix/Linux: Create process group
             if sys.platform != "win32" and hasattr(os, "setsid"):
                 popen_kwargs["preexec_fn"] = os.setsid
-            # Windows: CREATE_NEW_PROCESS_GROUP 플래그 사용
+            # Windows: Use CREATE_NEW_PROCESS_GROUP flag
             elif sys.platform == "win32":
                 popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
 
@@ -865,9 +865,9 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
 
             import sys
 
-            # 플랫폼별 프로세스 종료
+            # Platform-specific process termination
             if sys.platform == "win32":
-                # Windows: CTRL_BREAK_EVENT 시그널 전송
+                # Windows: Send CTRL_BREAK_EVENT signal
                 try:
                     self._camera_proc.send_signal(signal.CTRL_BREAK_EVENT)
                 except AttributeError:
@@ -881,12 +881,12 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                 if self._camera_proc.poll() is None:
                     self._camera_proc.kill()
             else:
-                # Unix/Linux: 프로세스 그룹에 시그널 전송
+                # Unix/Linux: Send signal to process group
                 try:
                     pgid = os.getpgid(self._camera_proc.pid)
                     os.killpg(pgid, signal.SIGTERM)
                 except (OSError, AttributeError):
-                    # Fallback: 개별 프로세스 종료
+                    # Fallback: Terminate individual process
                     self._camera_proc.terminate()
 
                 t0 = time.time()
@@ -907,7 +907,7 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             self._logger.exception("[CAMERA] stop failed")
             return {"success": False, "error": str(e), **self._camera_status()}
     # ---------------------------------------------------------
-    # (그대로 사용해도 OK) systemd or subprocess 선택
+    # Choose systemd or subprocess
     def _systemctl(self, unit: str, action: str):
         try:
             r = subprocess.run(["systemctl", action, unit],
@@ -947,25 +947,25 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
 
     def _get_sd_tree(self, force_refresh=False, timeout=0.0):
         """
-        /api/files?recursive=true 의 sdcard 트리와 최대한 동일하게 반환
+        Return sdcard tree as similar as possible to /api/files?recursive=true
         """
         try:
-            # 방법 1: 리스트 형식으로 통일
-            # 전체 파일 목록 (API 응답과 동일한 형식)
+            # Method 1: Unify as list format
+            # Full file list (same format as API response)
             local_files = self._file_manager.list_files(FileDestinations.LOCAL)
             files_list = list(local_files.get("local", {}).values())
-            # SD카드 파일 목록 (리스트 형태)
+            # SD card file list (as list)
             sd_files = self._printer.get_sd_files()
 
             all_files_payload = {}
             all_files_payload["local"] = files_list
             all_files_payload["sdcard"] = sd_files
 
-            
+
             return all_files_payload
 
         except Exception as e:
-            self._logger.debug(f"sd 트리 조회 실패: {e}")
+            self._logger.debug(f"Failed to retrieve SD tree: {e}")
             return {}
 
 
@@ -974,7 +974,7 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
     def _get_printer_summary(self):
         try:
             conn = self._printer.get_current_connection() or {}
-            # OctoPrint는 (state, port, baudrate, profile) 형태를 반환하는 경우가 많음
+            # OctoPrint often returns (state, port, baudrate, profile) tuple
             state = None
             port = None
             baud = None
@@ -1023,7 +1023,7 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                 "size": size,
             }
         except Exception as e:
-            self._logger.debug(f"summary 조회 실패: {e}")
+            self._logger.debug(f"Failed to retrieve summary: {e}")
             return {}
 
     def _ensure_instance_id(self, force_new=False):
@@ -1149,17 +1149,17 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
         try:
             data = request.get_json(force=True, silent=True) or {}
             url = (data.get("stream_url") or "").strip()
-            # 빈 값도 허용(초기화)
+            # Allow empty value (for reset)
             self._settings.set(["camera", "stream_url"], url)
             self._settings.save()
             return make_response(jsonify({"success": True, "stream_url": url}), 200)
         except Exception as e:
             return make_response(jsonify({"success": False, "error": str(e)}), 500)
 
-    # ===== Blueprint API 엔드포인트 (당신의 코드) =====
+    # ===== Blueprint API endpoints =====
     @octoprint.plugin.BlueprintPlugin.route("/upload/local", methods=["POST"])
     def upload_to_local(self):
-        """로컬에 파일 업로드"""
+        """Upload file to local storage"""
         try:
             from octoprint.filemanager.util import DiskFileWrapper
             from octoprint.filemanager.destinations import FileDestinations as FD
@@ -1168,11 +1168,11 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             from octoprint.filemanager import FileDestinations as FD
 
         if 'file' not in request.files:
-            return make_response(jsonify({"error": "파일이 없습니다"}), 400)
+            return make_response(jsonify({"error": "No file provided"}), 400)
 
         file = request.files['file']
         if file.filename == '':
-            return make_response(jsonify({"error": "파일명이 없습니다"}), 400)
+            return make_response(jsonify({"error": "No filename provided"}), 400)
 
         try:
             with tempfile.NamedTemporaryFile(delete=False, suffix='.gcode') as tmp_file:
@@ -1206,7 +1206,7 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             return make_response(jsonify({
                 "success": True,
                 "path": saved_path,
-                "message": f"파일이 로컬에 저장되었습니다: {saved_path}"
+                "message": f"File saved to local storage: {saved_path}"
             }), 200)
 
         except Exception as e:
@@ -1215,11 +1215,11 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                     os.unlink(tmp_path)
             except Exception:
                 pass
-            return make_response(jsonify({"error": f"업로드 실패: {str(e)}"}), 500)
+            return make_response(jsonify({"error": f"Upload failed: {str(e)}"}), 500)
 
     @octoprint.plugin.BlueprintPlugin.route("/upload/sd", methods=["POST"])
     def upload_to_sd(self):
-        """로컬 파일을 SD카드로 전송"""
+        """Transfer local file to SD card"""
         try:
             from octoprint.filemanager.destinations import FileDestinations as FD
         except Exception:
@@ -1229,28 +1229,28 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
         local_filename = data.get('filename')
 
         if not local_filename:
-            return make_response(jsonify({"error": "파일명이 필요합니다"}), 400)
+            return make_response(jsonify({"error": "Filename required"}), 400)
 
         try:
             if not getattr(self._printer, "is_sd_ready", lambda: False)():
-                return make_response(jsonify({"error": "SD카드가 준비되지 않았습니다"}), 409)
+                return make_response(jsonify({"error": "SD card not ready"}), 409)
 
             if self._printer.is_printing():
-                return make_response(jsonify({"error": "프린트 중에는 SD카드 업로드가 불가능합니다"}), 409)
+                return make_response(jsonify({"error": "Cannot upload to SD card while printing"}), 409)
 
             local_path = self._file_manager.path_on_disk(FD.LOCAL, local_filename)
             if not os.path.exists(local_path):
-                return make_response(jsonify({"error": f"로컬 파일을 찾을 수 없습니다: {local_filename}"}), 404)
+                return make_response(jsonify({"error": f"Local file not found: {local_filename}"}), 404)
 
             def on_success(remote_filename):
                 try:
-                    self._logger.info(f"SD카드 업로드 성공: {remote_filename}")
+                    self._logger.info(f"SD card upload successful: {remote_filename}")
                 except Exception:
                     pass
 
             def on_failure(remote_filename):
                 try:
-                    self._logger.error(f"SD카드 업로드 실패: {remote_filename}")
+                    self._logger.error(f"SD card upload failed: {remote_filename}")
                 except Exception:
                     pass
 
@@ -1265,11 +1265,11 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             return make_response(jsonify({
                 "success": True,
                 "remote_filename": remote_filename,
-                "message": f"파일이 SD카드에 업로드되었습니다: {remote_filename}"
+                "message": f"File uploaded to SD card: {remote_filename}"
             }), 200)
 
         except Exception as e:
-            return make_response(jsonify({"error": f"SD카드 업로드 실패: {str(e)}"}), 500)
+            return make_response(jsonify({"error": f"SD card upload failed: {str(e)}"}), 500)
 
 
     def get_update_information(self):
@@ -1286,9 +1286,9 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
         }
     
     def _make_snapshot(self):
-        """프린터 상태 스냅샷을 생성합니다."""
+        """Generate printer status snapshot."""
         import time, json
-        
+
         data  = self._printer.get_current_data() or {}
         temps = self._printer.get_current_temperatures() or {}
         conn  = self._printer.get_current_connection() or {}
@@ -1332,26 +1332,26 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                 },
                 "estimated_time": job.get("estimatedPrintTime"),
                 "last_time":      job.get("lastPrintTime"),
-                "filament":       filament,            # tool0.length/volume 등 그대로 유지
+                "filament":       filament,            # Keep tool0.length/volume etc. as-is
             },
             "axes": {
                 "currentZ": data.get("currentZ")
             },
             "temperatures": temps,                      # tool0/bed/chamber: actual/target/offset
             "connection": conn,                         # port/baudrate/printerProfile/state
-            "sd": self._get_sd_tree(),                  # REST 스타일 { files: [...] }
+            "sd": self._get_sd_tree(),                  # REST style { files: [...] }
         }
         return snapshot
 
     @octoprint.plugin.BlueprintPlugin.route("/snapshot", methods=["GET"])
     def get_snapshot(self):
-        """REST API로 스냅샷을 반환합니다."""
+        """Return snapshot via REST API."""
         return self._make_snapshot()
 
     def _start_snapshot_timer(self):
-        """스냅샷 전송 타이머를 시작합니다."""
+        """Start snapshot transmission timer."""
         with self._snapshot_timer_lock:
-            if self._snapshot_timer:  # 중복 방지
+            if self._snapshot_timer:  # Prevent duplicates
                 return
             interval = float(self._settings.get(["periodic_interval"]) or 1.0)
             self._snapshot_timer = RepeatedTimer(interval, self._snapshot_tick, run_first=True)
@@ -1359,7 +1359,7 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             self._logger.info(f"[FACTOR] snapshot timer started every {interval}s")
 
     def _stop_snapshot_timer(self):
-        """스냅샷 전송 타이머를 중지합니다."""
+        """Stop snapshot transmission timer."""
         with self._snapshot_timer_lock:
             if self._snapshot_timer:
                 self._snapshot_timer.cancel()
@@ -1367,11 +1367,11 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                 self._logger.info("[FACTOR] snapshot timer stopped")
 
     def _snapshot_tick(self):
-        """스냅샷 타이머 콜백 함수"""
-        # 연결되어 있지 않으면 아무것도 안 함 (MQTT 재연결을 기다림)
+        """Snapshot timer callback function"""
+        # Do nothing if not connected (wait for MQTT reconnection)
         if not (self.is_connected and self.mqtt_client):
             return
-        # 스냅샷 만들어 퍼블리시 (이미 만들었던 함수 재사용)
+        # Create and publish snapshot (reuse existing function)
         try:
             payload = self._make_snapshot()
             # Use temporary ID first during setup, then saved ID for registered devices
