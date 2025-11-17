@@ -23,7 +23,7 @@ from octoprint.util import RepeatedTimer
 
 __plugin_name__ = "FACTOR Plugin"
 __plugin_pythoncompat__ = ">=3.8,<4"
-__plugin_version__ = "2.6.6"
+__plugin_version__ = "2.6.7"
 __plugin_identifier__ = "octoprint_factor"
 
         
@@ -82,10 +82,7 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             publish_progress=True,
             publish_temperature=True,
             publish_gcode=False,
-            publish_snapshot=True,
             periodic_interval=1.0,
-            auth_api_base="https://factor.io.kr",
-            register_api_base="https://factor.io.kr",
             instance_id="",
             registered=False,
             receive_gcode_enabled=True,
@@ -1081,27 +1078,6 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             self._logger.error(f"Start setup error: {e}")
             return make_response(jsonify({"error": str(e)}), 500)
 
-    @octoprint.plugin.BlueprintPlugin.route("/refresh-qr", methods=["POST"])
-    def refresh_qr_code(self):
-        """Generate a new temporary instance ID and QR code"""
-        try:
-            # Force generate new temporary ID
-            new_instance_id = self._ensure_instance_id(force_new=True)
-
-            # DO NOT subscribe here - wait for button click
-            setup_url = f"https://factor.io.kr/setup/{new_instance_id}"
-
-            self._logger.info(f"QR code refreshed with new ID: {new_instance_id}")
-
-            return make_response(jsonify({
-                "success": True,
-                "instance_id": new_instance_id,
-                "setup_url": setup_url
-            }), 200)
-        except Exception as e:
-            self._logger.error(f"QR refresh error: {e}")
-            return make_response(jsonify({"error": str(e)}), 500)
-
     @octoprint.plugin.BlueprintPlugin.route("/confirm-registration", methods=["POST"])
     def confirm_registration(self):
         """Confirm registration and save the instance ID permanently"""
@@ -1156,125 +1132,11 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
         except Exception as e:
             return make_response(jsonify({"success": False, "error": str(e)}), 500)
 
-    # ===== Blueprint API endpoints =====
-    @octoprint.plugin.BlueprintPlugin.route("/upload/local", methods=["POST"])
-    def upload_to_local(self):
-        """Upload file to local storage"""
-        try:
-            from octoprint.filemanager.util import DiskFileWrapper
-            from octoprint.filemanager.destinations import FileDestinations as FD
-        except Exception:
-            from octoprint.filemanager.util import DiskFileWrapper
-            from octoprint.filemanager import FileDestinations as FD
-
-        if 'file' not in request.files:
-            return make_response(jsonify({"error": "No file provided"}), 400)
-
-        file = request.files['file']
-        if file.filename == '':
-            return make_response(jsonify({"error": "No filename provided"}), 400)
-
-        try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.gcode') as tmp_file:
-                file.save(tmp_file.name)
-                tmp_path = tmp_file.name
-
-            file_object = DiskFileWrapper(file.filename, tmp_path)
-            username = None
-            try:
-                user = getattr(self, "_user_manager", None)
-                if user:
-                    cu = user.get_current_user()
-                    if cu:
-                        username = cu.get_name()
-            except Exception:
-                pass
-
-            saved_path = self._file_manager.add_file(
-                FD.LOCAL,
-                file.filename,
-                file_object,
-                allow_overwrite=True,
-                user=username
-            )
-
-            try:
-                os.unlink(tmp_path)
-            except Exception:
-                pass
-
-            return make_response(jsonify({
-                "success": True,
-                "path": saved_path,
-                "message": f"File saved to local storage: {saved_path}"
-            }), 200)
-
-        except Exception as e:
-            try:
-                if 'tmp_path' in locals() and os.path.exists(tmp_path):
-                    os.unlink(tmp_path)
-            except Exception:
-                pass
-            return make_response(jsonify({"error": f"Upload failed: {str(e)}"}), 500)
-
-    @octoprint.plugin.BlueprintPlugin.route("/upload/sd", methods=["POST"])
-    def upload_to_sd(self):
-        """Transfer local file to SD card"""
-        try:
-            from octoprint.filemanager.destinations import FileDestinations as FD
-        except Exception:
-            from octoprint.filemanager import FileDestinations as FD
-
-        data = request.get_json(force=True, silent=True) or {}
-        local_filename = data.get('filename')
-
-        if not local_filename:
-            return make_response(jsonify({"error": "Filename required"}), 400)
-
-        try:
-            if not getattr(self._printer, "is_sd_ready", lambda: False)():
-                return make_response(jsonify({"error": "SD card not ready"}), 409)
-
-            if self._printer.is_printing():
-                return make_response(jsonify({"error": "Cannot upload to SD card while printing"}), 409)
-
-            local_path = self._file_manager.path_on_disk(FD.LOCAL, local_filename)
-            if not os.path.exists(local_path):
-                return make_response(jsonify({"error": f"Local file not found: {local_filename}"}), 404)
-
-            def on_success(remote_filename):
-                try:
-                    self._logger.info(f"SD card upload successful: {remote_filename}")
-                except Exception:
-                    pass
-
-            def on_failure(remote_filename):
-                try:
-                    self._logger.error(f"SD card upload failed: {remote_filename}")
-                except Exception:
-                    pass
-
-            remote_filename = self._printer.add_sd_file(
-                local_filename,
-                local_path,
-                on_success=on_success,
-                on_failure=on_failure,
-                tags={"source:plugin"}
-            )
-
-            return make_response(jsonify({
-                "success": True,
-                "remote_filename": remote_filename,
-                "message": f"File uploaded to SD card: {remote_filename}"
-            }), 200)
-
-        except Exception as e:
-            return make_response(jsonify({"error": f"SD card upload failed: {str(e)}"}), 500)
 
 
     def get_update_information(self):
         return {
-            "factor_mqtt": {
+            "octoprint_factor": {
                 "displayName": "FACTOR Plugin",
                 "displayVersion": __plugin_version__,
                 "type": "github_release",

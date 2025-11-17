@@ -45,27 +45,27 @@ def _validate_gcode_content(content: bytes, max_size_mb: int = 100) -> tuple:
 
 
 def handle_gcode_message(self, data: dict):
-    """MQTT로 받은 G-code 메시지 처리"""
+    """Handle G-code message received via MQTT"""
     action = (data.get("action") or "").lower()
     job_id = data.get("job_id")
     now = __import__("time").time()
     
     if not job_id:
-        self._logger.warning("[FACTOR MQTT] job_id 누락")
+        self._logger.warning("[FACTOR MQTT] job_id missing")
         return
 
-    # 업로드된 파일 즉시 프린트 (업로드 화이트리스트 기반)
+    # Print uploaded file immediately (based on upload whitelist)
     if action == "print":
         try:
             name = (data.get("filename") or "").strip()
             origin = (data.get("origin") or "local").lower()  # local | sd | sdcard
             if not name:
-                self._logger.warning("[FACTOR MQTT] print filename 누락")
+                self._logger.warning("[FACTOR MQTT] print filename missing")
                 return
 
             # Validate filename
             if not _validate_filename(name):
-                self._logger.error(f"[FACTOR MQTT] 유효하지 않은 파일명: {name}")
+                self._logger.error(f"[FACTOR MQTT] Invalid filename: {name}")
                 return
 
             is_sd = origin in ("sd", "sdcard", "sd_card")
@@ -74,28 +74,28 @@ def handle_gcode_message(self, data: dict):
             else:
                 wl = getattr(self, "_uploaded_local_files", set())
             if wl and name not in wl:
-                self._logger.warning(f"[FACTOR MQTT] 허용되지 않은 파일 print 요청: {name}")
+                self._logger.warning(f"[FACTOR MQTT] Unauthorized print request: {name}")
                 return
             self._printer.select_file(name, sd=is_sd, printAfterSelect=True)
-            self._logger.info(f"[FACTOR MQTT] print 시작: origin={'sd' if is_sd else 'local'} name={name}")
+            self._logger.info(f"[FACTOR MQTT] Print started: origin={'sd' if is_sd else 'local'} name={name}")
         except Exception as e:
-            self._logger.error(f"[FACTOR MQTT] print 실패: {e}")
+            self._logger.error(f"[FACTOR MQTT] Print failed: {e}")
         return
 
     if action == "start":
-        # 시작 로직
+        # Start logic
         filename = data.get("filename") or f"{job_id}.gcode"
         total = int(data.get("total_chunks") or 0)
         upload_target = (data.get("upload_traget") or data.get("upload_target") or "").lower()
 
         # Validate filename
         if not _validate_filename(filename):
-            self._logger.error(f"[FACTOR MQTT] 유효하지 않은 파일명: {filename}")
+            self._logger.error(f"[FACTOR MQTT] Invalid filename: {filename}")
             return
 
         # Validate chunk count
         if total <= 0 or total > 10000:  # Reasonable limit
-            self._logger.warning(f"[FACTOR MQTT] total_chunks 범위 초과: {total}")
+            self._logger.warning(f"[FACTOR MQTT] total_chunks out of range: {total}")
             return
 
         self._gcode_jobs[job_id] = {
@@ -106,18 +106,18 @@ def handle_gcode_message(self, data: dict):
             "last_ts": now,
             "upload_target": upload_target
         }
-        self._logger.info(f"[FACTOR MQTT] GCODE 수신 시작 job={job_id} file={filename} total={total}")
+        self._logger.info(f"[FACTOR MQTT] GCODE reception started job={job_id} file={filename} total={total}")
         return
 
     state = self._gcode_jobs.get(job_id)
     if not state:
-        self._logger.warning(f"[FACTOR MQTT] 알 수 없는 job_id={job_id}")
+        self._logger.warning(f"[FACTOR MQTT] Unknown job_id={job_id}")
         return
 
     state["last_ts"] = now
 
     if action == "chunk":
-        # 청크 처리 로직
+        # Chunk processing logic
         try:
             seq = int(data.get("seq"))
             b64 = data.get("data_b64") or ""
@@ -126,22 +126,22 @@ def handle_gcode_message(self, data: dict):
             chunk = base64.b64decode(b64)
             state["chunks"][seq] = chunk
             if len(state["chunks"]) % 50 == 0 or len(state["chunks"]) == 1:
-                self._logger.info(f"[FACTOR MQTT] chunk 수신 job={job_id} {len(state['chunks'])}/{state['total']}")
+                self._logger.info(f"[FACTOR MQTT] chunk received job={job_id} {len(state['chunks'])}/{state['total']}")
         except Exception as e:
-            self._logger.warning(f"[FACTOR MQTT] chunk 처리 실패: {e}")
+            self._logger.warning(f"[FACTOR MQTT] chunk processing failed: {e}")
         return
 
     if action == "cancel":
         self._gcode_jobs.pop(job_id, None)
-        self._logger.info(f"[FACTOR MQTT] GCODE 수신 취소 job={job_id}")
+        self._logger.info(f"[FACTOR MQTT] GCODE reception canceled job={job_id}")
         return
 
     if action == "end":
-        # 청크 조합 및 업로드
+        # Combine chunks and upload
         total = state["total"]
         got = len(state["chunks"])
         if got != total:
-            self._logger.warning(f"[FACTOR MQTT] end 수신 but chunk 불일치 {got}/{total}")
+            self._logger.warning(f"[FACTOR MQTT] end received but chunk mismatch {got}/{total}")
             return
 
         ordered = [state["chunks"][i] for i in range(total)]
@@ -150,7 +150,7 @@ def handle_gcode_message(self, data: dict):
         # Validate G-code content
         is_valid, error_msg = _validate_gcode_content(content)
         if not is_valid:
-            self._logger.error(f"[FACTOR MQTT] G-code 검증 실패: {error_msg}")
+            self._logger.error(f"[FACTOR MQTT] G-code validation failed: {error_msg}")
             self._gcode_jobs.pop(job_id, None)
             return
 
@@ -159,40 +159,40 @@ def handle_gcode_message(self, data: dict):
         if target not in ("sd", "local", "local_print"):
             target = (self._settings.get(["receive_target_default"]) or "local").lower()
 
-        # 청크 데이터 정리
+        # Clean up chunk data
         self._gcode_jobs.pop(job_id, None)
 
-        # 업로드 처리 (당신의 로직 재사용)
+        # Upload processing (reuse your logic)
         upload_result = _upload_gcode_content(self, content, filename, target)
 
         if upload_result.get("success"):
-            self._logger.info(f"[FACTOR MQTT] 업로드 성공 job={job_id} file={filename} target={target}")
+            self._logger.info(f"[FACTOR MQTT] Upload successful job={job_id} file={filename} target={target}")
         else:
-            self._logger.error(f"[FACTOR MQTT] 업로드 실패 job={job_id}: {upload_result.get('error')}")
+            self._logger.error(f"[FACTOR MQTT] Upload failed job={job_id}: {upload_result.get('error')}")
         return
 
 def _upload_gcode_content(self, content: bytes, filename: str, target: str):
-    """청크 데이터를 target에 따라 업로드"""
+    """Upload chunk data according to target"""
     try:
         if target == "sd":
             return _upload_bytes_to_sd(self, content, filename)
         elif target in ("local", "local_print"):
             res = _upload_bytes_to_local(self, content, filename)
-            # local_print 는 저장 후 즉시 인쇄
+            # local_print prints immediately after saving
             if target == "local_print" and res.get("success"):
                 try:
-                    # path가 아닌 파일명으로 select_file 호출 (LOCAL 루트)
+                    # Call select_file with filename (LOCAL root)
                     self._printer.select_file(filename, False, printAfterSelect=True)
                 except Exception:
                     pass
             return res
         else:
-            return {"success": False, "error": f"알 수 없는 target: {target}"}
+            return {"success": False, "error": f"Unknown target: {target}"}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 def _upload_bytes_to_local(self, content: bytes, filename: str):
-    """바이트 데이터를 로컬에 업로드"""
+    """Upload byte data to local"""
     tmp_path = None
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix='.gcode') as tmp_file:
@@ -228,13 +228,13 @@ def _upload_bytes_to_local(self, content: bytes, filename: str):
         return {
             "success": True,
             "path": saved_path,
-            "message": f"파일이 로컬에 저장되었습니다: {saved_path}"
+            "message": f"File saved to local: {saved_path}"
         }
 
     except Exception as e:
-        return {"success": False, "error": f"로컬 업로드 실패: {str(e)}"}
+        return {"success": False, "error": f"로컬 Upload failed: {str(e)}"}
     finally:
-        # 항상 임시 파일 정리
+        # Always clean up temporary files
         if tmp_path and os.path.exists(tmp_path):
             try:
                 os.unlink(tmp_path)
@@ -242,16 +242,16 @@ def _upload_bytes_to_local(self, content: bytes, filename: str):
                 pass
 
 def _upload_bytes_to_sd(self, content: bytes, filename: str):
-    """바이트 데이터를 SD카드에 업로드"""
+    """Upload byte data to SD card"""
     tmp_path = None
     try:
         if not getattr(self._printer, "is_sd_ready", lambda: False)():
-            return {"success": False, "error": "SD카드가 준비되지 않았습니다"}
+            return {"success": False, "error": "SD card not ready"}
 
         if self._printer.is_printing():
-            return {"success": False, "error": "프린트 중에는 SD카드 업로드가 불가능합니다"}
+            return {"success": False, "error": "Cannot upload to SD card while printing"}
 
-        # 임시 로컬 파일로 저장
+        # Save as temporary local file
         with tempfile.NamedTemporaryFile(delete=False, suffix='.gcode') as tmp_file:
             tmp_file.write(content)
             tmp_path = tmp_file.name
@@ -267,7 +267,7 @@ def _upload_bytes_to_sd(self, content: bytes, filename: str):
         except Exception:
             pass
 
-        # 임시 로컬 파일로 저장
+        # Save as temporary local file
         temp_filename = f"temp_{filename}"
         local_path = self._file_manager.add_file(
             FileDestinations.LOCAL,
@@ -279,8 +279,8 @@ def _upload_bytes_to_sd(self, content: bytes, filename: str):
 
         def on_success(local, remote, elapsed=None, *args, **kwargs):
             try:
-                self._logger.info(f"SD카드 업로드 성공:remote={remote}, local={local}")
-                # 임시 로컬 파일 삭제
+                self._logger.info(f"SD카드 Upload successful:remote={remote}, local={local}")
+                # Delete temporary local file
 
                 try:
                     self._printer.refresh_sd_files()
@@ -295,8 +295,8 @@ def _upload_bytes_to_sd(self, content: bytes, filename: str):
 
         def on_failure(local, remote, elapsed=None, *args, **kwargs):
             try:
-                self._logger.error(f"SD카드 업로드 실패: remote={remote}, local={local}")
-                # 임시 로컬 파일 삭제
+                self._logger.error(f"SD카드 Upload failed: remote={remote}, local={local}")
+                # Delete temporary local file
                 try:
                     self._file_manager.remove_file(FileDestinations.LOCAL, temp_filename)
                 except:
@@ -315,7 +315,7 @@ def _upload_bytes_to_sd(self, content: bytes, filename: str):
         try:
             if not hasattr(self, "_uploaded_sd_files"):
                 self._uploaded_sd_files = set()
-            # SD는 원격 파일명(프린터가 가진 경로/이름)이 기준일 수 있음. 우선 요청 filename으로 관리
+            # SD may use remote filename (printer's path/name). Manage with requested filename for now
             self._uploaded_sd_files.add(filename)
         except Exception:
             pass
@@ -323,13 +323,13 @@ def _upload_bytes_to_sd(self, content: bytes, filename: str):
         return {
             "success": True,
             "remote_filename": remote_filename,
-            "message": f"파일이 SD카드에 업로드되었습니다: {remote_filename}"
+            "message": f"File uploaded to SD card: {remote_filename}"
         }
 
     except Exception as e:
-        return {"success": False, "error": f"SD카드 업로드 실패: {str(e)}"}
+        return {"success": False, "error": f"SD카드 Upload failed: {str(e)}"}
     finally:
-        # 항상 임시 파일 정리
+        # Always clean up temporary files
         if tmp_path and os.path.exists(tmp_path):
             try:
                 os.unlink(tmp_path)
