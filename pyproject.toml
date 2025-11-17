@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "octoprint-factor-plugin"
-version = "2.6.3"
+version = "2.6.4"
 description = "FACTOR Plugin - Remote monitoring and camera integration for OctoPrint"
 readme = "README.md"
 authors = [

@@ -1,44 +1,27 @@
 {
   "wizard": {
-    "title": "FACTOR",
-    "intro": "factor.io.kr로 시작하세요 🚀! 어디서든 OctoPrint 포털, 프린터 제어, 카메라 스트림, 플러그인에 완벽하게 액세스하세요! FACTOR는 데스크톱, 노트북, 태블릿, 휴대폰 및 즐겨 사용하는 OctoPrint 앱에서 작동합니다!",
-    "tagline": "FACTOR는 무료이고, 안전하며, 설정이 매우 간단합니다!",
+    "title": "FACTOR 플러그인",
+    "intro": "어디서든 OctoPrint 포털, 프린터 제어, 카메라 스트림, 플러그인에 완벽하게 액세스하세요! FACTOR는 데스크톱, 노트북, 태블릿, 휴대폰 및 즐겨 사용하는 OctoPrint 앱에서 작동합니다!",
+    "tagline": "FACTOR는 <strong>무료이고, 안전하며, 설정이 매우 간단합니다!</strong>",
     "button": {
-      "setup": "지금 20초 설정 완료하기!"
+      "setup": "FACTOR 웹사이트 방문하기"
     },
     "help": {
-      "link": "도움이 필요하거나 피드백을 보내고 싶으신가요?"
+      "instructions": "장비를 등록하고 설정을 완료하려면 <a href=\"https://factor.io.kr\" target=\"_blank\">factor.io.kr</a>을 방문하세요."
     }
   },
   "setup": {
     "title": "FACTOR 장비 설정",
-    "description": "아래 버튼을 클릭하여 FACTOR 웹 대시보드에서 장비 설정을 완료하세요.",
-    "instanceId": "장비 ID:",
-    "setupUrl": "설정 URL:",
-    "url": {
-      "loading": "설정 URL 로딩 중..."
-    },
+    "description": "FACTOR 웹사이트를 방문하여 장비를 등록하고 설정을 완료하세요.",
     "button": {
-      "openWeb": "설정 페이지 열기",
-      "refresh": "설정 URL 새로고침",
-      "copy": "복사"
-    },
-    "status": {
-      "title": "연결 상태",
-      "registered": "장비 등록:",
-      "mqtt": "MQTT 연결:",
-      "checking": "확인 중...",
-      "yes": "예",
-      "no": "아니오",
-      "connected": "연결됨",
-      "disconnected": "연결 안됨"
+      "openWeb": "FACTOR 웹사이트 열기"
     },
     "help": {
       "title": "설정 방법",
-      "step1": "\"설정 페이지 열기\" 버튼을 클릭하여 설정을 시작하세요",
-      "step2": "웹 페이지에서 FACTOR 계정으로 로그인하세요",
+      "step1": "위의 \"FACTOR 웹사이트 열기\" 버튼을 클릭하세요",
+      "step2": "FACTOR 계정으로 로그인하거나 새로 만드세요",
       "step3": "장비 등록 및 설정을 완료하세요",
-      "step4": "여기로 돌아와서 연결 상태를 확인하세요"
+      "step4": "OctoPrint를 FACTOR를 통해 원격으로 액세스할 수 있습니다"
     }
   }
 }

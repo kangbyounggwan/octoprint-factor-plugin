@@ -1,44 +1,27 @@
 {
   "wizard": {
-    "title": "FACTOR",
-    "intro": "Blast off 🚀 with factor.io.kr! Access your full OctoPrint portal, printer controls, camera streams, and plugins from anywhere! FACTOR works on your desktop, laptop, tablet, phone, and your favorite OctoPrint apps!",
-    "tagline": "FACTOR is free, secure, and super easy to setup!",
+    "title": "FACTOR Plugin",
+    "intro": "Access your full OctoPrint portal, printer controls, camera streams, and plugins from anywhere! FACTOR works on your desktop, laptop, tablet, phone, and your favorite OctoPrint apps!",
+    "tagline": "FACTOR is <strong>free, secure, and super easy to setup!</strong>",
     "button": {
-      "setup": "Finish Your 20 Second Setup Now!"
+      "setup": "Visit FACTOR Website"
     },
     "help": {
-      "link": "Need help or want to send feedback?"
+      "instructions": "Visit <a href=\"https://factor.io.kr\" target=\"_blank\">factor.io.kr</a> to register your device and complete setup."
     }
   },
   "setup": {
     "title": "FACTOR Device Setup",
-    "description": "Click the button below to complete device setup on the FACTOR web dashboard.",
-    "instanceId": "Device ID:",
-    "setupUrl": "Setup URL:",
-    "url": {
-      "loading": "Loading setup URL..."
-    },
+    "description": "Visit the FACTOR website to register your device and complete setup.",
     "button": {
-      "openWeb": "Open Setup Page",
-      "refresh": "Refresh Setup URL",
-      "copy": "Copy"
-    },
-    "status": {
-      "title": "Connection Status",
-      "registered": "Device Registered:",
-      "mqtt": "MQTT Connection:",
-      "checking": "Checking...",
-      "yes": "Yes",
-      "no": "No",
-      "connected": "Connected",
-      "disconnected": "Disconnected"
+      "openWeb": "Open FACTOR Website"
     },
     "help": {
       "title": "How to Setup",
-      "step1": "Click \"Open Setup Page\" button to start setup",
-      "step2": "Login to your FACTOR account on the web page",
+      "step1": "Click \"Open FACTOR Website\" button above",
+      "step2": "Login to your FACTOR account or create a new one",
       "step3": "Complete the device registration and configuration",
-      "step4": "Return here to verify the connection status"
+      "step4": "Your OctoPrint will be accessible remotely via FACTOR"
     }
   }
 }
