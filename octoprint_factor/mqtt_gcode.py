@@ -232,7 +232,7 @@ def _upload_bytes_to_local(self, content: bytes, filename: str):
         }
 
     except Exception as e:
-        return {"success": False, "error": f"로컬 Upload failed: {str(e)}"}
+        return {"success": False, "error": f"Local upload failed: {str(e)}"}
     finally:
         # Always clean up temporary files
         if tmp_path and os.path.exists(tmp_path):
@@ -279,7 +279,7 @@ def _upload_bytes_to_sd(self, content: bytes, filename: str):
 
         def on_success(local, remote, elapsed=None, *args, **kwargs):
             try:
-                self._logger.info(f"SD카드 Upload successful:remote={remote}, local={local}")
+                self._logger.info(f"SD card upload successful:remote={remote}, local={local}")
                 # Delete temporary local file
 
                 try:
@@ -295,7 +295,7 @@ def _upload_bytes_to_sd(self, content: bytes, filename: str):
 
         def on_failure(local, remote, elapsed=None, *args, **kwargs):
             try:
-                self._logger.error(f"SD카드 Upload failed: remote={remote}, local={local}")
+                self._logger.error(f"SD card upload failed: remote={remote}, local={local}")
                 # Delete temporary local file
                 try:
                     self._file_manager.remove_file(FileDestinations.LOCAL, temp_filename)
@@ -327,7 +327,7 @@ def _upload_bytes_to_sd(self, content: bytes, filename: str):
         }
 
     except Exception as e:
-        return {"success": False, "error": f"SD카드 Upload failed: {str(e)}"}
+        return {"success": False, "error": f"SD card upload failed: {str(e)}"}
     finally:
         # Always clean up temporary files
         if tmp_path and os.path.exists(tmp_path):
