@@ -22,7 +22,7 @@ from octoprint.util import RepeatedTimer
 
 __plugin_name__ = "FACTOR Plugin"
 __plugin_pythoncompat__ = ">=3.8,<4"
-__plugin_version__ = "2.7.0"
+__plugin_version__ = "2.7.1"
 __plugin_identifier__ = "octoprint_factor"
 
         
@@ -309,11 +309,12 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
         rc_i = _as_code(rc)
         self.is_connected = (rc_i == 0)
         if self.is_connected:
-            self._logger.info("MQTT broker connection OK")
+            inst = self._temp_instance_id or self._settings.get(["instance_id"]) or "unknown"
+            self._logger.info(f"[FACTOR] MQTT broker connection OK - Instance ID: {inst}")
             self._start_snapshot_timer()     # Start here
             self._subscribe_mqtt_topics()
         else:
-            self._logger.error(f"MQTT connection failed rc={rc}")
+            self._logger.error(f"[FACTOR] MQTT connection failed rc={rc}")
 
     def _on_mqtt_disconnect(self, client, userdata, rc, properties=None, *args, **kwargs):
         rc_i = _as_code(rc)
@@ -362,6 +363,10 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             # Use temporary ID first during setup, then saved ID for registered devices
             inst = self._temp_instance_id or self._settings.get(["instance_id"]) or "unknown"
 
+            # Log all incoming messages for debugging
+            payload_preview = str(msg.payload[:100]) if msg.payload else ""
+            self._logger.debug(f"[FACTOR] MQTT message received - Topic: {topic}, Payload preview: {payload_preview}")
+
             # 1) Control: control/<instance_id>
             if topic == f"control/{inst}":
                 payload = msg.payload.decode("utf-8", errors="ignore") if isinstance(msg.payload, (bytes, bytearray)) else str(msg.payload or "")
@@ -402,11 +407,13 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                 registration_topic_temp = f"device/{self._temp_instance_id}/registration"
                 if topic == registration_topic or topic == registration_topic_temp:
                     payload = msg.payload.decode("utf-8", errors="ignore") if isinstance(msg.payload, (bytes, bytearray)) else str(msg.payload or "")
+                    self._logger.info(f"[FACTOR] Received registration message on topic {topic}: {payload}")
                     try:
                         data = json.loads(payload or "{}")
                         status = data.get("status")
+                        self._logger.info(f"[FACTOR] Registration message parsed - status: {status}, data: {data}")
 
-                        if status == "registered":
+                        if status == "registered" or status == "registration_confirmed":
                             # Save registration permanently
                             instance_id = self._temp_instance_id or inst
                             self._settings.set(["instance_id"], instance_id)
@@ -1074,7 +1081,11 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             # Only save after registration is confirmed
             instance_id = self._ensure_instance_id(force_new=False)
 
-            # DO NOT subscribe here - subscribe only when button is clicked
+            # If MQTT is already connected, resubscribe to correct topics
+            if self.is_connected and self.mqtt_client:
+                self._logger.info(f"[FACTOR] Resubscribing to topics with new temp ID: {instance_id}")
+                self._subscribe_mqtt_topics()
+
             setup_url = f"https://factor.io.kr/setup/{instance_id}"
 
             return make_response(jsonify({
