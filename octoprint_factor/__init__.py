@@ -22,7 +22,7 @@ from octoprint.util import RepeatedTimer
 
 __plugin_name__ = "FACTOR Plugin"
 __plugin_pythoncompat__ = ">=3.8,<4"
-__plugin_version__ = "2.7.2"
+__plugin_version__ = "2.7.3"
 __plugin_identifier__ = "octoprint_factor"
 
         
@@ -63,8 +63,9 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
         # Temporary instance ID (not saved until registration is complete)
         self._temp_instance_id = None
         # Position tracking
-        self._current_position = {"x": None, "y": None, "z": None, "e": None}
-        self._target_position = {"x": None, "y": None, "z": None, "e": None}
+        self._current_position = {"x": None, "y": None, "z": None, "e": None}  # Machine coordinates (accumulated)
+        self._target_position = {"x": None, "y": None, "z": None, "e": None}   # G-code target coordinates
+        self._position_offset = {"x": None, "y": None, "z": None, "e": None}   # Offset at print start
         self._position_lock = __import__("threading").Lock()
         self._is_absolute_positioning = True  # G90 (absolute) by default
     
@@ -189,9 +190,15 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
     def on_event(self, event, payload):
         if not self.is_connected:
             return
-        
+
+        # Handle PrintStarted event to capture position offset
+        if event == "PrintStarted":
+            self._capture_position_offset()
+        elif event == "PrintDone" or event == "PrintFailed" or event == "PrintCancelled":
+            self._reset_position_offset()
+
         topic_prefix = self._settings.get(["topic_prefix"])
-        
+
         if event == "PrinterStateChanged":
             self._publish_status(payload, topic_prefix)
         elif event == "PrintProgress":
@@ -1231,12 +1238,7 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                 "filament":       filament,            # Keep tool0.length/volume etc. as-is
             },
             "axes": {
-                "current": {
-                    "x": self._current_position.get("x"),
-                    "y": self._current_position.get("y"),
-                    "z": self._current_position.get("z") or data.get("currentZ"),
-                    "e": self._current_position.get("e")
-                },
+                "current": self._get_job_coordinates(),  # Convert machine coords to job coords
                 "target": {
                     "x": self._target_position.get("x"),
                     "y": self._target_position.get("y"),
@@ -1287,9 +1289,14 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
 
             with self._position_lock:
                 if x_match:
-                    self._current_position["x"] = float(x_match.group(1))
+                    new_x = float(x_match.group(1))
+                    self._logger.debug(f"[POSITION] Parsing X from line: {line[:100]}")
+                    self._logger.debug(f"[POSITION] Setting X: {self._current_position['x']} -> {new_x}")
+                    self._current_position["x"] = new_x
                 if y_match:
-                    self._current_position["y"] = float(y_match.group(1))
+                    new_y = float(y_match.group(1))
+                    self._logger.debug(f"[POSITION] Setting Y: {self._current_position['y']} -> {new_y}")
+                    self._current_position["y"] = new_y
                 if z_match:
                     self._current_position["z"] = float(z_match.group(1))
                 if e_match:
@@ -1297,10 +1304,47 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
         except Exception as e:
             self._logger.debug(f"Error parsing M114 response: {e}")
 
+    def _capture_position_offset(self):
+        """Capture machine coordinate offset at print start"""
+        try:
+            with self._position_lock:
+                # Store current machine coordinates as offset
+                self._position_offset["x"] = self._current_position.get("x")
+                self._position_offset["y"] = self._current_position.get("y")
+                self._position_offset["z"] = self._current_position.get("z")
+                self._position_offset["e"] = self._current_position.get("e")
+                self._logger.info(f"[POSITION] Captured offset at print start: {self._position_offset}")
+        except Exception as e:
+            self._logger.error(f"Error capturing position offset: {e}")
+
+    def _reset_position_offset(self):
+        """Reset position offset after print ends"""
+        with self._position_lock:
+            self._position_offset = {"x": None, "y": None, "z": None, "e": None}
+            self._logger.info("[POSITION] Reset position offset")
+
+    def _get_job_coordinates(self):
+        """Convert machine coordinates to job coordinates using offset"""
+        with self._position_lock:
+            result = {"x": None, "y": None, "z": None, "e": None}
+
+            for axis in ["x", "y", "z", "e"]:
+                machine = self._current_position.get(axis)
+                offset = self._position_offset.get(axis)
+
+                if machine is not None and offset is not None:
+                    # Job coordinate = Machine coordinate - Start offset
+                    result[axis] = machine - offset
+                elif machine is not None:
+                    # No offset yet (print not started), use machine coordinate
+                    result[axis] = machine
+
+            return result
+
     def _request_position_update(self):
         """Request position update via M114 command"""
         try:
-            # Only request position when printer is operational
+            # Request M114 to get machine coordinates
             if self._printer.is_operational():
                 self._printer.commands("M114")
         except Exception as e:
@@ -1308,9 +1352,17 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
 
     def on_gcode_received(self, comm_instance, line, *args, **kwargs):
         """Hook to receive G-code responses from printer"""
-        # Check if this is an M114 response
-        if line and ("X:" in line or "Count" in line):
-            self._parse_m114_response(line)
+        # Check if this is an M114 response (must contain "X:" and NOT be a G-code command)
+        # M114 responses typically start with "ok" or "X:" and contain position data
+        if line and "X:" in line:
+            # Exclude G-code commands (G0, G1, G28, etc.) from being parsed as M114
+            line_upper = line.upper().strip()
+            # Only parse if it's NOT a G-code command being sent
+            if not (line_upper.startswith("SEND:") or
+                    line_upper.startswith("G0 ") or line_upper.startswith("G1 ") or
+                    line_upper.startswith("G28") or line_upper.startswith("G29") or
+                    "G0 " in line_upper or "G1 " in line_upper):
+                self._parse_m114_response(line)
         return line
 
     def _parse_gcode_for_target_position(self, gcode, cmd):
