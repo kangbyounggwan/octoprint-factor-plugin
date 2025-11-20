@@ -14,7 +14,6 @@ import uuid
 
 import flask
 import octoprint.plugin
-import requests
 from flask import jsonify, make_response, request
 from octoprint.filemanager import FileDestinations
 from octoprint.util import RepeatedTimer
@@ -23,7 +22,7 @@ from octoprint.util import RepeatedTimer
 
 __plugin_name__ = "FACTOR Plugin"
 __plugin_pythoncompat__ = ">=3.8,<4"
-__plugin_version__ = "2.6.8"
+__plugin_version__ = "2.7.0"
 __plugin_identifier__ = "octoprint_factor"
 
         
@@ -63,6 +62,11 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
         self._camera_last_error = None
         # Temporary instance ID (not saved until registration is complete)
         self._temp_instance_id = None
+        # Position tracking
+        self._current_position = {"x": None, "y": None, "z": None, "e": None}
+        self._target_position = {"x": None, "y": None, "z": None, "e": None}
+        self._position_lock = __import__("threading").Lock()
+        self._is_absolute_positioning = True  # G90 (absolute) by default
     
     ##~~ SettingsPlugin mixin
     
@@ -487,9 +491,18 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
     def _handle_control_message(self, data: dict):
         t = (data.get("type") or "").lower()
         try:
-            from .control import pause_print as _pause, resume_print as _resume, cancel_print as _cancel, home_axes as _home, move_axes as _move, set_temperature as _set_temp
+            from .control import (
+                pause_print as _pause,
+                resume_print as _resume,
+                cancel_print as _cancel,
+                home_axes as _home,
+                move_axes as _move,
+                set_temperature as _set_temp,
+                set_feed_rate as _set_feed,
+                set_fan_speed as _set_fan
+            )
         except Exception:
-            _pause = _resume = _cancel = _home = _move = _set_temp = None
+            _pause = _resume = _cancel = _home = _move = _set_temp = _set_feed = _set_fan = None
         # ---- camera control via MQTT ----
         if t == "camera":
             action = (data.get("action") or "").lower()
@@ -552,6 +565,16 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             wait = bool(data.get("wait", False))
             res = _set_temp(self, tool, temperature, wait) if _set_temp else {"error": "control module unavailable"}
             self._logger.info(f"[CONTROL] set_temperature tool={tool} temp={temperature} wait={wait} -> {res}")
+            return
+        if t == "set_feed_rate" or t == "feed_rate":
+            factor = float(data.get("factor") or data.get("speed") or 100)
+            res = _set_feed(self, factor) if _set_feed else {"error": "control module unavailable"}
+            self._logger.info(f"[CONTROL] set_feed_rate factor={factor} -> {res}")
+            return
+        if t == "set_fan_speed" or t == "fan_speed":
+            speed = int(data.get("speed") or 0)
+            res = _set_fan(self, speed) if _set_fan else {"error": "control module unavailable"}
+            self._logger.info(f"[CONTROL] set_fan_speed speed={speed} -> {res}")
             return
         self._logger.warning(f"[CONTROL] unknown type={t}")
 
@@ -1197,7 +1220,18 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                 "filament":       filament,            # Keep tool0.length/volume etc. as-is
             },
             "axes": {
-                "currentZ": data.get("currentZ")
+                "current": {
+                    "x": self._current_position.get("x"),
+                    "y": self._current_position.get("y"),
+                    "z": self._current_position.get("z") or data.get("currentZ"),
+                    "e": self._current_position.get("e")
+                },
+                "target": {
+                    "x": self._target_position.get("x"),
+                    "y": self._target_position.get("y"),
+                    "z": self._target_position.get("z"),
+                    "e": self._target_position.get("e")
+                }
             },
             "temperatures": temps,                      # tool0/bed/chamber: actual/target/offset
             "connection": conn,                         # port/baudrate/printerProfile/state
@@ -1228,11 +1262,107 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                 self._snapshot_timer = None
                 self._logger.info("[FACTOR] snapshot timer stopped")
 
+    def _parse_m114_response(self, line):
+        """Parse M114 response to extract position data.
+        Example: Recv: ok X:6546.127 Y:2462.397 Z:10.7 E:161.602 Count: A:654612 B:246239 C:1070
+        """
+        import re
+        try:
+            # Match X, Y, Z, E values
+            x_match = re.search(r'X:([-\d.]+)', line)
+            y_match = re.search(r'Y:([-\d.]+)', line)
+            z_match = re.search(r'Z:([-\d.]+)', line)
+            e_match = re.search(r'E:([-\d.]+)', line)
+
+            with self._position_lock:
+                if x_match:
+                    self._current_position["x"] = float(x_match.group(1))
+                if y_match:
+                    self._current_position["y"] = float(y_match.group(1))
+                if z_match:
+                    self._current_position["z"] = float(z_match.group(1))
+                if e_match:
+                    self._current_position["e"] = float(e_match.group(1))
+        except Exception as e:
+            self._logger.debug(f"Error parsing M114 response: {e}")
+
+    def _request_position_update(self):
+        """Request position update via M114 command"""
+        try:
+            # Only request position when printer is operational
+            if self._printer.is_operational():
+                self._printer.commands("M114")
+        except Exception as e:
+            self._logger.debug(f"Error requesting position: {e}")
+
+    def on_gcode_received(self, comm_instance, line, *args, **kwargs):
+        """Hook to receive G-code responses from printer"""
+        # Check if this is an M114 response
+        if line and ("X:" in line or "Count" in line):
+            self._parse_m114_response(line)
+        return line
+
+    def _parse_gcode_for_target_position(self, gcode, cmd):
+        """Parse G0/G1 commands to extract target position.
+        Example: G1 X100.5 Y50.2 Z10 E5.5 F3000
+        """
+        import re
+        try:
+            # Check for positioning mode changes
+            if gcode == "G90":
+                self._is_absolute_positioning = True
+                return
+            elif gcode == "G91":
+                self._is_absolute_positioning = False
+                return
+
+            # Only process movement commands
+            if gcode not in ["G0", "G1"]:
+                return
+
+            # Parse X, Y, Z, E values from command
+            x_match = re.search(r'X([-\d.]+)', cmd, re.IGNORECASE)
+            y_match = re.search(r'Y([-\d.]+)', cmd, re.IGNORECASE)
+            z_match = re.search(r'Z([-\d.]+)', cmd, re.IGNORECASE)
+            e_match = re.search(r'E([-\d.]+)', cmd, re.IGNORECASE)
+
+            with self._position_lock:
+                if self._is_absolute_positioning:
+                    # Absolute mode: directly set target position
+                    if x_match:
+                        self._target_position["x"] = float(x_match.group(1))
+                    if y_match:
+                        self._target_position["y"] = float(y_match.group(1))
+                    if z_match:
+                        self._target_position["z"] = float(z_match.group(1))
+                    if e_match:
+                        self._target_position["e"] = float(e_match.group(1))
+                else:
+                    # Relative mode: add to current position
+                    if x_match and self._target_position["x"] is not None:
+                        self._target_position["x"] += float(x_match.group(1))
+                    if y_match and self._target_position["y"] is not None:
+                        self._target_position["y"] += float(y_match.group(1))
+                    if z_match and self._target_position["z"] is not None:
+                        self._target_position["z"] += float(z_match.group(1))
+                    if e_match and self._target_position["e"] is not None:
+                        self._target_position["e"] += float(e_match.group(1))
+        except Exception as e:
+            self._logger.debug(f"Error parsing gcode for target position: {e}")
+
+    def on_gcode_sent(self, comm_instance, phase, cmd, cmd_type, gcode, *args, **kwargs):
+        """Hook to capture sent G-code commands for target position tracking"""
+        if gcode:
+            self._parse_gcode_for_target_position(gcode, cmd)
+        return None
+
     def _snapshot_tick(self):
         """Snapshot timer callback function"""
         # Do nothing if not connected (wait for MQTT reconnection)
         if not (self.is_connected and self.mqtt_client):
             return
+        # Request position update before creating snapshot
+        self._request_position_update()
         # Create and publish snapshot (reuse existing function)
         try:
             payload = self._make_snapshot()
@@ -1252,5 +1382,9 @@ def __plugin_load__():
     global __plugin_hooks__
     __plugin_hooks__ = {
         "octoprint.plugin.softwareupdate.check_config":
-            __plugin_implementation__.get_update_information
+            __plugin_implementation__.get_update_information,
+        "octoprint.comm.protocol.gcode.received":
+            __plugin_implementation__.on_gcode_received,
+        "octoprint.comm.protocol.gcode.sent":
+            __plugin_implementation__.on_gcode_sent
     }

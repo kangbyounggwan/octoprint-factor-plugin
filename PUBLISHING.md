@@ -12,9 +12,9 @@
    - Verify your email
    - Enable 2FA (recommended)
 
-3. **Create API token**:
+3. **Create PyPI authentication token**:
    - Go to https://pypi.org/manage/account/token/
-   - Create a new API token with scope: "Entire account"
+   - Create a new PyPI token with scope: "Entire account"
    - Save the token (it starts with `pypi-`)
 
 ## Building the Package
@@ -49,7 +49,7 @@ python -m twine upload dist/*
 
 When prompted:
 - Username: `__token__`
-- Password: `pypi-...` (your API token)
+- Password: `pypi-...` (your PyPI token from step 3)
 
 ## Verify Installation
 
@@ -188,8 +188,8 @@ When releasing new versions:
 - Use: `octoprint-factor-plugin`
 
 ### "Authentication failed"
-- Use `__token__` as username
-- Use full token including `pypi-` prefix
+- Use `__token__` as username (literal string)
+- Use your full PyPI token as password including `pypi-` prefix
 
 ## Resources
 
