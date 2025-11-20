@@ -22,7 +22,7 @@ from octoprint.util import RepeatedTimer
 
 __plugin_name__ = "FACTOR Plugin"
 __plugin_pythoncompat__ = ">=3.8,<4"
-__plugin_version__ = "2.7.1"
+__plugin_version__ = "2.7.2"
 __plugin_identifier__ = "octoprint_factor"
 
         
@@ -1339,7 +1339,7 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
 
             with self._position_lock:
                 if self._is_absolute_positioning:
-                    # Absolute mode: directly set target position
+                    # Absolute mode (G90): directly set target position
                     if x_match:
                         self._target_position["x"] = float(x_match.group(1))
                     if y_match:
@@ -1349,15 +1349,17 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                     if e_match:
                         self._target_position["e"] = float(e_match.group(1))
                 else:
-                    # Relative mode: add to current position
-                    if x_match and self._target_position["x"] is not None:
-                        self._target_position["x"] += float(x_match.group(1))
-                    if y_match and self._target_position["y"] is not None:
-                        self._target_position["y"] += float(y_match.group(1))
-                    if z_match and self._target_position["z"] is not None:
-                        self._target_position["z"] += float(z_match.group(1))
-                    if e_match and self._target_position["e"] is not None:
-                        self._target_position["e"] += float(e_match.group(1))
+                    # Relative mode (G91): Clear target position to indicate relative mode
+                    # We cannot reliably track target in relative mode without continuous position updates
+                    # Set to None to indicate "relative movement in progress"
+                    if x_match:
+                        self._target_position["x"] = None
+                    if y_match:
+                        self._target_position["y"] = None
+                    if z_match:
+                        self._target_position["z"] = None
+                    if e_match:
+                        self._target_position["e"] = None
         except Exception as e:
             self._logger.debug(f"Error parsing gcode for target position: {e}")
 
