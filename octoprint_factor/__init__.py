@@ -22,7 +22,7 @@ from octoprint.util import RepeatedTimer
 
 __plugin_name__ = "FACTOR Plugin"
 __plugin_pythoncompat__ = ">=3.8,<4"
-__plugin_version__ = "2.7.3"
+__plugin_version__ = "2.7.4"
 __plugin_identifier__ = "octoprint_factor"
 
         
@@ -68,6 +68,11 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
         self._position_offset = {"x": None, "y": None, "z": None, "e": None}   # Offset at print start
         self._position_lock = __import__("threading").Lock()
         self._is_absolute_positioning = True  # G90 (absolute) by default
+
+        # Path history tracking (OctoPrint GCode Viewer style)
+        self._path_history = []  # List of path segments: [{prevX, prevY, x, y, z, extrude, move, retract, tool}]
+        self._path_history_max = 10000  # Maximum number of path segments to keep
+        self._last_recorded_position = {"x": 0, "y": 0, "z": 0, "e": 0}  # Last recorded position for path tracking
     
     ##~~ SettingsPlugin mixin
     
@@ -194,6 +199,7 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
         # Handle PrintStarted event to capture position offset
         if event == "PrintStarted":
             self._capture_position_offset()
+            self._clear_path_history()  # Clear path history on new print
         elif event == "PrintDone" or event == "PrintFailed" or event == "PrintCancelled":
             self._reset_position_offset()
 
@@ -1244,8 +1250,15 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                     "y": self._target_position.get("y"),
                     "z": self._target_position.get("z"),
                     "e": self._target_position.get("e")
+                },
+                "machine": {  # Raw machine coordinates from M114
+                    "x": self._current_position.get("x"),
+                    "y": self._current_position.get("y"),
+                    "z": self._current_position.get("z"),
+                    "e": self._current_position.get("e")
                 }
             },
+            "path": self._get_path_summary(),  # Path history summary
             "temperatures": temps,                      # tool0/bed/chamber: actual/target/offset
             "connection": conn,                         # port/baudrate/printerProfile/state
             "sd": self._get_sd_tree(),                  # REST style { files: [...] }
@@ -1256,6 +1269,68 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
     def get_snapshot(self):
         """Return snapshot via REST API."""
         return self._make_snapshot()
+
+    @octoprint.plugin.BlueprintPlugin.route("/path-history", methods=["GET"])
+    def get_path_history(self):
+        """Return path history for visualization (OctoPrint GCode Viewer style)
+
+        Query params:
+            limit: Maximum number of segments to return (default: 1000)
+            offset: Starting index (default: 0)
+            format: 'full' for all data, 'compact' for coordinates only (default: full)
+        """
+        try:
+            limit = request.args.get("limit", type=int, default=1000)
+            offset = request.args.get("offset", type=int, default=0)
+            format_type = request.args.get("format", type=str, default="full")
+
+            # Limit max return count
+            limit = min(limit, 5000)
+
+            segments = self._get_path_history(limit=limit, offset=offset)
+
+            if format_type == "compact":
+                # Return only coordinates for smaller payload
+                compact_segments = [
+                    [s["prevX"], s["prevY"], s["x"], s["y"], 1 if s["extrude"] else 0]
+                    for s in segments
+                ]
+                return make_response(jsonify({
+                    "success": True,
+                    "format": "compact",
+                    "offset": offset,
+                    "count": len(compact_segments),
+                    "total": len(self._path_history),
+                    "segments": compact_segments
+                }), 200)
+            else:
+                # Return full segment data
+                return make_response(jsonify({
+                    "success": True,
+                    "format": "full",
+                    "offset": offset,
+                    "count": len(segments),
+                    "total": len(self._path_history),
+                    "summary": self._get_path_summary(),
+                    "segments": segments
+                }), 200)
+
+        except Exception as e:
+            self._logger.error(f"Path history error: {e}")
+            return make_response(jsonify({"success": False, "error": str(e)}), 500)
+
+    @octoprint.plugin.BlueprintPlugin.route("/path-history", methods=["DELETE"])
+    def clear_path_history(self):
+        """Clear path history"""
+        try:
+            self._clear_path_history()
+            return make_response(jsonify({
+                "success": True,
+                "message": "Path history cleared"
+            }), 200)
+        except Exception as e:
+            self._logger.error(f"Clear path history error: {e}")
+            return make_response(jsonify({"success": False, "error": str(e)}), 500)
 
     def _start_snapshot_timer(self):
         """Start snapshot transmission timer."""
@@ -1323,6 +1398,90 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             self._position_offset = {"x": None, "y": None, "z": None, "e": None}
             self._logger.info("[POSITION] Reset position offset")
 
+    def _clear_path_history(self):
+        """Clear path history for new print"""
+        with self._position_lock:
+            self._path_history = []
+            self._last_recorded_position = {"x": 0, "y": 0, "z": 0, "e": 0}
+            self._logger.info("[PATH] Path history cleared")
+
+    def _add_path_segment(self, prev_x, prev_y, x, y, z, extrude=False, retract=0, tool=0):
+        """Add a path segment to history (OctoPrint GCode Viewer style)
+
+        Args:
+            prev_x, prev_y: Starting coordinates
+            x, y: Target coordinates
+            z: Z height
+            extrude: True if extruding (drawing line)
+            retract: -1 for retract, 0 for none, 1 for restart
+            tool: Tool/extruder number
+        """
+        with self._position_lock:
+            # Skip if no actual movement
+            if prev_x == x and prev_y == y:
+                return
+
+            segment = {
+                "prevX": prev_x,
+                "prevY": prev_y,
+                "x": x,
+                "y": y,
+                "z": z,
+                "extrude": extrude,
+                "retract": retract,
+                "tool": tool,
+                "move": not extrude and retract == 0  # Travel move (no extrusion)
+            }
+
+            self._path_history.append(segment)
+
+            # Limit history size
+            if len(self._path_history) > self._path_history_max:
+                # Remove oldest 10% when limit reached
+                remove_count = self._path_history_max // 10
+                self._path_history = self._path_history[remove_count:]
+
+    def _get_path_history(self, limit=None, offset=0):
+        """Get path history for rendering
+
+        Args:
+            limit: Maximum number of segments to return (None for all)
+            offset: Starting index
+
+        Returns:
+            List of path segments
+        """
+        with self._position_lock:
+            if limit is None:
+                return self._path_history[offset:]
+            return self._path_history[offset:offset + limit]
+
+    def _get_path_summary(self):
+        """Get path history summary for status reporting"""
+        with self._position_lock:
+            total_segments = len(self._path_history)
+            extrude_count = sum(1 for s in self._path_history if s.get("extrude"))
+            move_count = sum(1 for s in self._path_history if s.get("move"))
+            retract_count = sum(1 for s in self._path_history if s.get("retract") == -1)
+
+            # Calculate bounding box
+            if total_segments > 0:
+                min_x = min(min(s["prevX"], s["x"]) for s in self._path_history)
+                max_x = max(max(s["prevX"], s["x"]) for s in self._path_history)
+                min_y = min(min(s["prevY"], s["y"]) for s in self._path_history)
+                max_y = max(max(s["prevY"], s["y"]) for s in self._path_history)
+                bounding_box = {"minX": min_x, "maxX": max_x, "minY": min_y, "maxY": max_y}
+            else:
+                bounding_box = None
+
+            return {
+                "total_segments": total_segments,
+                "extrude_count": extrude_count,
+                "move_count": move_count,
+                "retract_count": retract_count,
+                "bounding_box": bounding_box
+            }
+
     def _get_job_coordinates(self):
         """Convert machine coordinates to job coordinates using offset"""
         with self._position_lock:
@@ -1366,8 +1525,10 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
         return line
 
     def _parse_gcode_for_target_position(self, gcode, cmd):
-        """Parse G0/G1 commands to extract target position.
+        """Parse G0/G1 commands to extract target position and record path history.
         Example: G1 X100.5 Y50.2 Z10 E5.5 F3000
+
+        Based on OctoPrint GCode Viewer's worker.js parsing logic.
         """
         import re
         try:
@@ -1389,29 +1550,110 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             z_match = re.search(r'Z([-\d.]+)', cmd, re.IGNORECASE)
             e_match = re.search(r'E([-\d.]+)', cmd, re.IGNORECASE)
 
+            # Calculate new position based on mode
+            new_x = None
+            new_y = None
+            new_z = None
+            new_e = None
+            extrude = False
+            retract = 0
+
             with self._position_lock:
+                # Get previous position
+                prev_x = self._last_recorded_position.get("x", 0) or 0
+                prev_y = self._last_recorded_position.get("y", 0) or 0
+                prev_z = self._last_recorded_position.get("z", 0) or 0
+                prev_e = self._last_recorded_position.get("e", 0) or 0
+
                 if self._is_absolute_positioning:
                     # Absolute mode (G90): directly set target position
                     if x_match:
-                        self._target_position["x"] = float(x_match.group(1))
+                        new_x = float(x_match.group(1))
+                        self._target_position["x"] = new_x
+                    else:
+                        new_x = prev_x
+
                     if y_match:
-                        self._target_position["y"] = float(y_match.group(1))
+                        new_y = float(y_match.group(1))
+                        self._target_position["y"] = new_y
+                    else:
+                        new_y = prev_y
+
                     if z_match:
-                        self._target_position["z"] = float(z_match.group(1))
+                        new_z = float(z_match.group(1))
+                        self._target_position["z"] = new_z
+                    else:
+                        new_z = prev_z
+
                     if e_match:
-                        self._target_position["e"] = float(e_match.group(1))
+                        new_e = float(e_match.group(1))
+                        self._target_position["e"] = new_e
+                        # Check extrusion (OctoPrint GCode Viewer style)
+                        e_delta = new_e - prev_e
+                        if e_delta > 0:
+                            extrude = True
+                            retract = 0
+                        elif e_delta < 0:
+                            extrude = False
+                            retract = -1  # Retract
+                    else:
+                        new_e = prev_e
                 else:
-                    # Relative mode (G91): Clear target position to indicate relative mode
-                    # We cannot reliably track target in relative mode without continuous position updates
-                    # Set to None to indicate "relative movement in progress"
+                    # Relative mode (G91): calculate target from current position
                     if x_match:
-                        self._target_position["x"] = None
+                        delta_x = float(x_match.group(1))
+                        new_x = prev_x + delta_x
+                        self._target_position["x"] = new_x
+                    else:
+                        new_x = prev_x
+
                     if y_match:
-                        self._target_position["y"] = None
+                        delta_y = float(y_match.group(1))
+                        new_y = prev_y + delta_y
+                        self._target_position["y"] = new_y
+                    else:
+                        new_y = prev_y
+
                     if z_match:
-                        self._target_position["z"] = None
+                        delta_z = float(z_match.group(1))
+                        new_z = prev_z + delta_z
+                        self._target_position["z"] = new_z
+                    else:
+                        new_z = prev_z
+
                     if e_match:
-                        self._target_position["e"] = None
+                        delta_e = float(e_match.group(1))
+                        new_e = prev_e + delta_e
+                        self._target_position["e"] = new_e
+                        # Check extrusion
+                        if delta_e > 0:
+                            extrude = True
+                            retract = 0
+                        elif delta_e < 0:
+                            extrude = False
+                            retract = -1  # Retract
+                    else:
+                        new_e = prev_e
+
+                # Update last recorded position
+                self._last_recorded_position["x"] = new_x
+                self._last_recorded_position["y"] = new_y
+                self._last_recorded_position["z"] = new_z
+                self._last_recorded_position["e"] = new_e
+
+            # Add to path history (only if X or Y movement)
+            if x_match or y_match:
+                self._add_path_segment(
+                    prev_x=prev_x,
+                    prev_y=prev_y,
+                    x=new_x,
+                    y=new_y,
+                    z=new_z,
+                    extrude=extrude,
+                    retract=retract,
+                    tool=0  # TODO: Track tool changes with T commands
+                )
+
         except Exception as e:
             self._logger.debug(f"Error parsing gcode for target position: {e}")
 

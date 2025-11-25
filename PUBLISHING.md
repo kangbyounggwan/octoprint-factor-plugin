@@ -74,14 +74,14 @@ pip install octoprint-factor-plugin
    ---
    layout: plugin
 
-   id: factor_mqtt
+   id: octoprint_factor
    title: FACTOR Plugin
-   description: Remote monitoring and camera integration for OctoPrint
+   description: Remote monitoring and control for OctoPrint. Access your 3D printer from anywhere with real-time monitoring, camera streaming, and instant notifications via cloud connection.
    authors:
    - FACTOR Team
    license: AGPLv3
 
-   date: 2024-11-11
+   date: 2024-11-17
 
    homepage: https://factor.io.kr
    source: https://github.com/kangbyounggwan/octoprint-factor-plugin
@@ -93,13 +93,21 @@ pip install octoprint-factor-plugin
    - mqtt
    - remote
    - 3dprinting
+   - cloud
+   - notifications
+
+   # Required for cloud services
+   attributes:
+   - cloud
+   - commercial
+   - free-tier
 
    screenshots:
-   - url: /assets/img/plugins/factor_mqtt/screenshot.png
+   - url: /assets/img/plugins/octoprint_factor/screenshot.png
      alt: FACTOR Plugin Dashboard
      caption: Monitor your printer remotely
 
-   featuredimage: /assets/img/plugins/factor_mqtt/featured.png
+   featuredimage: /assets/img/plugins/octoprint_factor/featured.png
 
    compatibility:
      octoprint:
@@ -116,24 +124,43 @@ pip install octoprint-factor-plugin
 
    # FACTOR Plugin
 
-   Remote monitoring and camera integration for OctoPrint.
+   Remote monitoring and control for OctoPrint via cloud-based MQTT connection.
 
    ## Features
 
-   - Real-time printer status monitoring
-   - Camera streaming (MJPEG, WebRTC, RTSP)
-   - MQTT integration
-   - Remote control capabilities
-   - Multi-language support (Korean, English)
+   ### 🚀 Easy Setup
+   - Simple web-based registration
+   - Automatic MQTT connection configuration
+   - No complex broker setup needed
+
+   ### 📱 Remote Access Anywhere
+   - Access your OctoPrint from desktop, laptop, tablet, or phone
+   - Secure cloud connection via MQTT
+
+   ### 📹 Camera Streaming
+   - Full framerate webcam streaming
+   - Multiple format support (MJPEG, WebRTC, RTSP, HLS)
+
+   ### 🔔 Instant Notifications
+   - Print completion alerts
+   - Error notifications
+   - Multiple channels (Push, Telegram, Discord, Email)
+
+   ### 🌐 Multilingual Support
+   - English and Korean (한국어) built-in
 
    ## Setup
 
    1. Install the plugin via Plugin Manager
-   2. Login with your FACTOR account
-   3. Register your device
-   4. Complete setup on https://factor.io.kr
+   2. Scan QR code or visit [factor.io.kr](https://factor.io.kr)
+   3. Complete device registration
+   4. Start monitoring!
 
-   For detailed instructions, see the [GitHub repository](https://github.com/kangbyounggwan/octoprint-factor-plugin).
+   ## Support
+
+   - **Website**: [factor.io.kr](https://factor.io.kr)
+   - **GitHub**: [Report issues](https://github.com/kangbyounggwan/octoprint-factor-plugin/issues)
+   - **Changelog**: See [GitHub Releases](https://github.com/kangbyounggwan/octoprint-factor-plugin/releases)
    ```
 
 3. **Submit Pull Request**:
