@@ -1,18 +1,13 @@
 # -*- coding: utf-8 -*-
-import base64
-import hashlib
-import io
 import json
 import os
 import re
 import shlex
 import signal
 import subprocess
-import tempfile
 import time
 import uuid
 
-import flask
 import octoprint.plugin
 from flask import jsonify, make_response, request
 from octoprint.filemanager import FileDestinations
@@ -22,7 +17,7 @@ from octoprint.util import RepeatedTimer
 
 __plugin_name__ = "FACTOR Plugin"
 __plugin_pythoncompat__ = ">=3.8,<4"
-__plugin_version__ = "2.7.4"
+__plugin_version__ = "2.7.5"
 __plugin_identifier__ = "octoprint_factor"
 
         
@@ -1125,62 +1120,6 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             self._logger.error(f"Start setup error: {e}")
             return make_response(jsonify({"error": str(e)}), 500)
 
-    @octoprint.plugin.BlueprintPlugin.route("/confirm-registration", methods=["POST"])
-    def confirm_registration(self):
-        """Confirm registration and save the instance ID permanently"""
-        try:
-            data = request.get_json()
-            instance_id = data.get("instance_id")
-
-            if not instance_id:
-                return make_response(jsonify({"error": "instance_id is required"}), 400)
-
-            # Verify this is our temporary ID
-            if instance_id != self._temp_instance_id:
-                saved_id = self._settings.get(["instance_id"])
-                if instance_id != saved_id:
-                    return make_response(jsonify({"error": "Invalid instance_id"}), 400)
-
-            # Save permanently
-            self._settings.set(["instance_id"], instance_id)
-            self._settings.set(["registered"], True)
-            self._settings.save()
-
-            # Clear temporary ID
-            self._temp_instance_id = None
-
-            self._logger.info(f"Registration confirmed for device: {instance_id}")
-
-            return make_response(jsonify({
-                "success": True,
-                "message": "Registration confirmed"
-            }), 200)
-        except Exception as e:
-            self._logger.error(f"Registration confirmation error: {e}")
-            return make_response(jsonify({"error": str(e)}), 500)
-
-    @octoprint.plugin.BlueprintPlugin.route("/camera", methods=["GET"])
-    def get_camera_config(self):
-        try:
-            url = self._settings.get(["camera", "stream_url"]) or ""
-            return make_response(jsonify({"success": True, "stream_url": url}), 200)
-        except Exception as e:
-            return make_response(jsonify({"success": False, "error": str(e)}), 500)
-
-    @octoprint.plugin.BlueprintPlugin.route("/camera", methods=["POST"])
-    def set_camera_config(self):
-        try:
-            data = request.get_json(force=True, silent=True) or {}
-            url = (data.get("stream_url") or "").strip()
-            # Allow empty value (for reset)
-            self._settings.set(["camera", "stream_url"], url)
-            self._settings.save()
-            return make_response(jsonify({"success": True, "stream_url": url}), 200)
-        except Exception as e:
-            return make_response(jsonify({"success": False, "error": str(e)}), 500)
-
-
-
     def get_update_information(self):
         return {
             "octoprint_factor": {
@@ -1264,73 +1203,6 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             "sd": self._get_sd_tree(),                  # REST style { files: [...] }
         }
         return snapshot
-
-    @octoprint.plugin.BlueprintPlugin.route("/snapshot", methods=["GET"])
-    def get_snapshot(self):
-        """Return snapshot via REST API."""
-        return self._make_snapshot()
-
-    @octoprint.plugin.BlueprintPlugin.route("/path-history", methods=["GET"])
-    def get_path_history(self):
-        """Return path history for visualization (OctoPrint GCode Viewer style)
-
-        Query params:
-            limit: Maximum number of segments to return (default: 1000)
-            offset: Starting index (default: 0)
-            format: 'full' for all data, 'compact' for coordinates only (default: full)
-        """
-        try:
-            limit = request.args.get("limit", type=int, default=1000)
-            offset = request.args.get("offset", type=int, default=0)
-            format_type = request.args.get("format", type=str, default="full")
-
-            # Limit max return count
-            limit = min(limit, 5000)
-
-            segments = self._get_path_history(limit=limit, offset=offset)
-
-            if format_type == "compact":
-                # Return only coordinates for smaller payload
-                compact_segments = [
-                    [s["prevX"], s["prevY"], s["x"], s["y"], 1 if s["extrude"] else 0]
-                    for s in segments
-                ]
-                return make_response(jsonify({
-                    "success": True,
-                    "format": "compact",
-                    "offset": offset,
-                    "count": len(compact_segments),
-                    "total": len(self._path_history),
-                    "segments": compact_segments
-                }), 200)
-            else:
-                # Return full segment data
-                return make_response(jsonify({
-                    "success": True,
-                    "format": "full",
-                    "offset": offset,
-                    "count": len(segments),
-                    "total": len(self._path_history),
-                    "summary": self._get_path_summary(),
-                    "segments": segments
-                }), 200)
-
-        except Exception as e:
-            self._logger.error(f"Path history error: {e}")
-            return make_response(jsonify({"success": False, "error": str(e)}), 500)
-
-    @octoprint.plugin.BlueprintPlugin.route("/path-history", methods=["DELETE"])
-    def clear_path_history(self):
-        """Clear path history"""
-        try:
-            self._clear_path_history()
-            return make_response(jsonify({
-                "success": True,
-                "message": "Path history cleared"
-            }), 200)
-        except Exception as e:
-            self._logger.error(f"Clear path history error: {e}")
-            return make_response(jsonify({"success": False, "error": str(e)}), 500)
 
     def _start_snapshot_timer(self):
         """Start snapshot transmission timer."""

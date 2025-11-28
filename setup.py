@@ -5,7 +5,7 @@ README = (Path(__file__).parent / "README.md").read_text(encoding="utf-8")
 
 setup(
     name="octoprint-factor-plugin",
-    version="2.7.4",
+    version="2.7.5",
     description="FACTOR Plugin - Remote monitoring and camera integration for OctoPrint",
     long_description=README,
     long_description_content_type="text/markdown",

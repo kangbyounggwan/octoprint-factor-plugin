@@ -140,9 +140,8 @@ def set_feed_rate(plugin, factor: float):
 def set_fan_speed(plugin, speed: int):
     """
     Set fan speed.
-    speed: 0-255 (0 = off, 255 = full speed)
-    Percentage can also be used (0-100, will be converted to 0-255)
-    G-code: M106 S<speed> or M107 (fan off)
+    speed: 0-100 (percentage, 0 = off, 100 = full speed)
+    G-code: M106 S<pwm> or M107 (fan off)
     """
     try:
         if not plugin._printer.is_operational():
@@ -150,13 +149,11 @@ def set_fan_speed(plugin, speed: int):
 
         speed_value = int(speed)
 
-        # If value is 0-100, assume percentage and convert to 0-255
-        if 0 <= speed_value <= 100:
-            pwm_value = int((speed_value / 100.0) * 255)
-        elif 101 <= speed_value <= 255:
-            pwm_value = speed_value
-        else:
-            return {"error": "Fan speed must be between 0-255"}
+        if speed_value < 0 or speed_value > 100:
+            return {"error": "Fan speed must be between 0-100%"}
+
+        # Convert percentage to PWM (0-255)
+        pwm_value = int((speed_value / 100.0) * 255)
 
         commands = []
         if pwm_value == 0:
@@ -169,7 +166,7 @@ def set_fan_speed(plugin, speed: int):
         except TypeError:
             plugin._printer.commands(commands)
 
-        return {"success": True, "message": f"Fan speed set to {pwm_value}/255", "commands": commands}
+        return {"success": True, "message": f"Fan speed set to {speed_value}% ({pwm_value}/255)", "commands": commands}
     except Exception as e:
         return {"error": f"Fan speed setting failed: {str(e)}"}
 
