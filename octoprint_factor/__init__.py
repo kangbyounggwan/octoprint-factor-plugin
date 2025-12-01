@@ -17,8 +17,19 @@ from octoprint.util import RepeatedTimer
 
 __plugin_name__ = "FACTOR Plugin"
 __plugin_pythoncompat__ = ">=3.8,<4"
-__plugin_version__ = "2.7.5"
+__plugin_version__ = "2.7.6"
 __plugin_identifier__ = "octoprint_factor"
+
+
+class InstanceIdRequiredError(Exception):
+    """Raised when instance_id is required but not available.
+
+    This exception prevents the plugin from accidentally subscribing to
+    or publishing on generic topics like 'device/unknown/registration',
+    which could cause security issues with multiple instances sharing
+    the same topic.
+    """
+    pass
 
         
 def _as_code(x):
@@ -282,7 +293,9 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
         try:
             qos = int(self._settings.get(["qos_level"]) or 1)
             # Use temporary ID first (for setup), then saved ID (for registered devices)
-            inst = self._temp_instance_id or self._settings.get(["instance_id"]) or "unknown"
+            # SECURITY: Never fall back to "unknown" - this could cause multiple instances
+            # to subscribe to the same topic and receive each other's commands
+            inst = self._get_required_instance_id(context="MQTT topic subscription")
 
             # Unsubscribe from old topics if they exist
             if hasattr(self, '_current_subscribed_id') and self._current_subscribed_id != inst:
@@ -317,10 +330,14 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
         rc_i = _as_code(rc)
         self.is_connected = (rc_i == 0)
         if self.is_connected:
-            inst = self._temp_instance_id or self._settings.get(["instance_id"]) or "unknown"
-            self._logger.info(f"[FACTOR] MQTT broker connection OK - Instance ID: {inst}")
+            inst = self._temp_instance_id or self._settings.get(["instance_id"])
+            self._logger.info(f"[FACTOR] MQTT broker connection OK - Instance ID: {inst or '(not yet assigned)'}")
             self._start_snapshot_timer()     # Start here
-            self._subscribe_mqtt_topics()
+            # Only subscribe if we have an instance ID
+            if inst:
+                self._subscribe_mqtt_topics()
+            else:
+                self._logger.warning("[FACTOR] Skipping topic subscription: no instance ID yet")
         else:
             self._logger.error(f"[FACTOR] MQTT connection failed rc={rc}")
 
@@ -369,7 +386,11 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
         try:
             topic = msg.topic or ""
             # Use temporary ID first during setup, then saved ID for registered devices
-            inst = self._temp_instance_id or self._settings.get(["instance_id"]) or "unknown"
+            # SECURITY: Do not process messages if we don't have a valid instance ID
+            inst = self._temp_instance_id or self._settings.get(["instance_id"])
+            if not inst:
+                self._logger.warning(f"[FACTOR] Ignoring message on topic {topic}: no instance ID configured")
+                return
 
             # Log all incoming messages for debugging
             payload_preview = str(msg.payload[:100]) if msg.payload else ""
@@ -631,9 +652,13 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
     def _publish_status(self, payload, topic_prefix):
         if not self._settings.get(["publish_status"]):
             return
-        
+
         import json
-        inst = self._settings.get(["instance_id"]) or "unknown"
+        try:
+            inst = self._get_required_instance_id(context="status publish")
+        except InstanceIdRequiredError:
+            self._logger.debug("[FACTOR] Skipping status publish: no instance ID")
+            return
         topic = f"{topic_prefix}/status/{inst}"
         message = json.dumps(payload)
         self._publish_message(topic, message)
@@ -969,10 +994,12 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
 
     def _publish_camera_state(self):
         try:
-            inst = self._settings.get(["instance_id"]) or "unknown"
+            inst = self._get_required_instance_id(context="camera state publish")
             topic = f"camera/{inst}/state"
             payload = json.dumps(self._camera_status())
             self._publish_message(topic, payload)
+        except InstanceIdRequiredError:
+            self._logger.debug("[FACTOR] Skipping camera state publish: no instance ID")
         except Exception as e:
             self._logger.debug(f"publish camera state error: {e}")
             
@@ -1079,6 +1106,34 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
 
         return self._temp_instance_id
 
+    def _get_required_instance_id(self, context: str = "operation") -> str:
+        """
+        Get instance_id, raising an exception if not available.
+
+        This method should be used instead of fallback to "unknown" to prevent
+        security issues where multiple instances could accidentally subscribe
+        to the same generic topic.
+
+        Args:
+            context: Description of the operation requiring instance_id (for logging)
+
+        Returns:
+            The instance_id (either temporary or saved)
+
+        Raises:
+            InstanceIdRequiredError: If neither temporary nor saved instance_id exists
+        """
+        # First check temporary ID (during setup), then saved ID
+        inst = self._temp_instance_id or self._settings.get(["instance_id"])
+        if not inst:
+            error_msg = (
+                f"Instance ID is required for {context} but not available. "
+                "This device needs to be registered first."
+            )
+            self._logger.error(f"[FACTOR] {error_msg}")
+            raise InstanceIdRequiredError(error_msg)
+        return inst
+
     ##~~ BlueprintPlugin mixin
 
     @octoprint.plugin.BlueprintPlugin.route("/setup-url", methods=["GET"])
@@ -1119,6 +1174,70 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
         except Exception as e:
             self._logger.error(f"Start setup error: {e}")
             return make_response(jsonify({"error": str(e)}), 500)
+
+    @octoprint.plugin.BlueprintPlugin.route("/connection-status", methods=["GET"])
+    def get_connection_status(self):
+        """Get current MQTT connection and subscription status"""
+        try:
+            instance_id = self._temp_instance_id or self._settings.get(["instance_id"])
+            registered = self._settings.get_boolean(["registered"])
+            subscribed_id = getattr(self, '_current_subscribed_id', None)
+
+            status = {
+                "mqtt_connected": self.is_connected,
+                "instance_id": instance_id,
+                "instance_id_available": bool(instance_id),
+                "registered": registered,
+                "subscribed": bool(subscribed_id),
+                "subscribed_id": subscribed_id,
+                "can_receive_commands": bool(self.is_connected and subscribed_id),
+            }
+
+            # Determine overall status message
+            if not self.is_connected:
+                status["status"] = "disconnected"
+                status["message"] = "MQTT broker not connected"
+            elif not instance_id:
+                status["status"] = "no_instance_id"
+                status["message"] = "No instance ID - click 'Open FACTOR Website' to start setup"
+            elif not subscribed_id:
+                status["status"] = "not_subscribed"
+                status["message"] = "Connected but not subscribed to topics"
+            elif not registered:
+                status["status"] = "pending_registration"
+                status["message"] = "Waiting for registration confirmation"
+            else:
+                status["status"] = "ready"
+                status["message"] = "Connected and ready"
+
+            return make_response(jsonify(status), 200)
+        except Exception as e:
+            self._logger.error(f"Connection status error: {e}")
+            return make_response(jsonify({"error": str(e)}), 500)
+
+    @octoprint.plugin.BlueprintPlugin.route("/retry-connection", methods=["POST"])
+    def retry_connection(self):
+        """Retry MQTT connection and topic subscription"""
+        try:
+            result = {"actions": []}
+
+            # Reconnect MQTT if needed
+            if not self.is_connected:
+                self._disconnect_mqtt()
+                self._connect_mqtt()
+                result["actions"].append("mqtt_reconnect_initiated")
+
+            # Try to subscribe if we have an instance ID
+            instance_id = self._temp_instance_id or self._settings.get(["instance_id"])
+            if instance_id and self.is_connected:
+                self._subscribe_mqtt_topics()
+                result["actions"].append("subscription_attempted")
+
+            result["success"] = True
+            return make_response(jsonify(result), 200)
+        except Exception as e:
+            self._logger.error(f"Retry connection error: {e}")
+            return make_response(jsonify({"success": False, "error": str(e)}), 500)
 
     def get_update_information(self):
         return {
@@ -1544,12 +1663,14 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
         self._request_position_update()
         # Create and publish snapshot (reuse existing function)
         try:
+            # SECURITY: Do not publish to generic topic without instance ID
+            inst = self._get_required_instance_id(context="snapshot publish")
             payload = self._make_snapshot()
-            # Use temporary ID first during setup, then saved ID for registered devices
-            inst = self._temp_instance_id or self._settings.get(["instance_id"]) or "unknown"
             topic = f"{self._settings.get(['topic_prefix']) or 'octoprint'}/status/{inst}"
             self._publish_message(topic, json.dumps(payload))
             self._gc_expired_jobs()
+        except InstanceIdRequiredError:
+            self._logger.debug("[FACTOR] Skipping snapshot: no instance ID configured")
         except Exception as e:
             self._logger.debug(f"snapshot tick error: {e}")
 
