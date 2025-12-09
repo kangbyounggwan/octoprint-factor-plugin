@@ -4,7 +4,41 @@ from octoprint.filemanager.util import DiskFileWrapper
 import tempfile
 import os
 import base64
-import re
+import json
+import time
+
+
+# Track unknown job_ids to prevent log spam (only warn once per job_id)
+_unknown_job_ids_warned = set()
+
+
+def _publish_upload_result(self, job_id, success, filename, error=None, target=None, file_size=None):
+    """Publish upload result to MQTT topic: octoprint/gcode_out/{instance_id}"""
+    try:
+        instance_id = self._temp_instance_id or self._settings.get(["instance_id"])
+        if not instance_id or not self.mqtt_client or not self.is_connected:
+            return
+
+        result = {
+            "type": "upload_result",
+            "job_id": job_id,
+            "success": success,
+            "filename": filename,
+            "timestamp": time.time(),
+        }
+
+        if success:
+            result["target"] = target
+            if file_size is not None:
+                result["file_size"] = file_size
+        else:
+            result["error"] = error or "Unknown error"
+
+        topic = f"octoprint/gcode_out/{instance_id}"
+        self.mqtt_client.publish(topic, json.dumps(result), qos=1)
+        self._logger.info(f"[FACTOR MQTT] Published upload result to {topic}: success={success}")
+    except Exception as e:
+        self._logger.error(f"[FACTOR MQTT] Failed to publish upload result: {e}")
 
 
 def _validate_filename(filename: str) -> bool:
@@ -14,11 +48,14 @@ def _validate_filename(filename: str) -> bool:
     # Prevent path traversal
     if ".." in filename or "/" in filename or "\\" in filename:
         return False
-    # Allow only alphanumeric, underscore, hyphen, and dot
-    if not re.match(r'^[a-zA-Z0-9_\-\.]+$', filename):
+    # Block dangerous characters (control chars, shell metacharacters)
+    # Allow Unicode letters (Korean, etc.), numbers, underscore, hyphen, dot, space
+    dangerous_chars = set('<>:"|?*\x00\n\r\t')
+    if any(c in dangerous_chars for c in filename):
         return False
-    # Must end with .gcode or .g
-    if not (filename.lower().endswith('.gcode') or filename.lower().endswith('.g')):
+    # Must end with valid G-code extensions
+    valid_extensions = ('.gcode', '.gco', '.g')
+    if not filename.lower().endswith(valid_extensions):
         return False
     # Reasonable length limit
     if len(filename) > 255:
@@ -27,20 +64,9 @@ def _validate_filename(filename: str) -> bool:
 
 
 def _validate_gcode_content(content: bytes, max_size_mb: int = 100) -> tuple:
-    """
-    Validate G-code content for safety.
-    Returns (is_valid, error_message).
-    """
-    # Check size
+    """Validate G-code content size. Returns (is_valid, error_message)."""
     if len(content) > max_size_mb * 1024 * 1024:
         return False, f"File too large (max {max_size_mb}MB)"
-
-    # Check for dangerous patterns (optional, commented out for flexibility)
-    # dangerous_patterns = [b'M997', b'M999']  # Firmware reset commands
-    # for pattern in dangerous_patterns:
-    #     if pattern in content:
-    #         return False, f"Dangerous command detected: {pattern.decode()}"
-
     return True, None
 
 
@@ -70,10 +96,10 @@ def handle_gcode_message(self, data: dict):
 
             is_sd = origin in ("sd", "sdcard", "sd_card")
             if is_sd:
-                wl = getattr(self, "_uploaded_sd_files", set())
+                whitelist = getattr(self, "_uploaded_sd_files", set())
             else:
-                wl = getattr(self, "_uploaded_local_files", set())
-            if wl and name not in wl:
+                whitelist = getattr(self, "_uploaded_local_files", set())
+            if whitelist and name not in whitelist:
                 self._logger.warning(f"[FACTOR MQTT] Unauthorized print request: {name}")
                 return
             self._printer.select_file(name, sd=is_sd, printAfterSelect=True)
@@ -111,7 +137,13 @@ def handle_gcode_message(self, data: dict):
 
     state = self._gcode_jobs.get(job_id)
     if not state:
-        self._logger.warning(f"[FACTOR MQTT] Unknown job_id={job_id}")
+        # Only warn once per unknown job_id to prevent log spam
+        if job_id not in _unknown_job_ids_warned:
+            _unknown_job_ids_warned.add(job_id)
+            self._logger.warning(f"[FACTOR MQTT] Unknown job_id={job_id} (further messages suppressed)")
+            # Limit cache size to prevent memory leak
+            if len(_unknown_job_ids_warned) > 1000:
+                _unknown_job_ids_warned.clear()
         return
 
     state["last_ts"] = now
@@ -120,10 +152,10 @@ def handle_gcode_message(self, data: dict):
         # Chunk processing logic
         try:
             seq = int(data.get("seq"))
-            b64 = data.get("data_b64") or ""
-            if seq < 0 or not b64:
+            base64_data = data.get("data_b64") or ""
+            if seq < 0 or not base64_data:
                 raise ValueError("seq/data_b64 invalid")
-            chunk = base64.b64decode(b64)
+            chunk = base64.b64decode(base64_data)
             state["chunks"][seq] = chunk
             if len(state["chunks"]) % 50 == 0 or len(state["chunks"]) == 1:
                 self._logger.info(f"[FACTOR MQTT] chunk received job={job_id} {len(state['chunks'])}/{state['total']}")
@@ -140,8 +172,12 @@ def handle_gcode_message(self, data: dict):
         # Combine chunks and upload
         total = state["total"]
         got = len(state["chunks"])
+        filename = state.get("filename", "")
+
         if got != total:
             self._logger.warning(f"[FACTOR MQTT] end received but chunk mismatch {got}/{total}")
+            _publish_upload_result(self, job_id, False, filename, f"chunk mismatch {got}/{total}")
+            self._gcode_jobs.pop(job_id, None)
             return
 
         ordered = [state["chunks"][i] for i in range(total)]
@@ -151,10 +187,10 @@ def handle_gcode_message(self, data: dict):
         is_valid, error_msg = _validate_gcode_content(content)
         if not is_valid:
             self._logger.error(f"[FACTOR MQTT] G-code validation failed: {error_msg}")
+            _publish_upload_result(self, job_id, False, filename, error_msg)
             self._gcode_jobs.pop(job_id, None)
             return
 
-        filename = state["filename"]
         target = (data.get("target") or state.get("upload_target") or "").lower()
         if target not in ("sd", "local", "local_print"):
             target = (self._settings.get(["receive_target_default"]) or "local").lower()
@@ -167,8 +203,10 @@ def handle_gcode_message(self, data: dict):
 
         if upload_result.get("success"):
             self._logger.info(f"[FACTOR MQTT] Upload successful job={job_id} file={filename} target={target}")
+            _publish_upload_result(self, job_id, True, filename, None, target, len(content))
         else:
             self._logger.error(f"[FACTOR MQTT] Upload failed job={job_id}: {upload_result.get('error')}")
+            _publish_upload_result(self, job_id, False, filename, upload_result.get("error"))
         return
 
 def _upload_gcode_content(self, content: bytes, filename: str, target: str):

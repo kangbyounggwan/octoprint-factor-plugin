@@ -5,14 +5,14 @@ import re
 import shlex
 import signal
 import subprocess
+import threading
 import time
 import uuid
 
 import octoprint.plugin
-from flask import jsonify, make_response, request
+from flask import jsonify, make_response
 from octoprint.filemanager import FileDestinations
 from octoprint.util import RepeatedTimer
-
 
 
 __plugin_name__ = "FACTOR Plugin"
@@ -22,66 +22,56 @@ __plugin_identifier__ = "octoprint_factor"
 
 
 class InstanceIdRequiredError(Exception):
-    """Raised when instance_id is required but not available.
-
-    This exception prevents the plugin from accidentally subscribing to
-    or publishing on generic topics like 'device/unknown/registration',
-    which could cause security issues with multiple instances sharing
-    the same topic.
-    """
+    """Raised when instance_id is required but not available."""
     pass
 
-        
-def _as_code(x):
+
+def _parse_mqtt_result_code(result_code):
+    """Parse MQTT result code from various formats."""
     try:
-        v = getattr(x, "value", None)
-        if isinstance(v, int):
-            return v
-        return int(x)
+        value = getattr(result_code, "value", None)
+        if isinstance(value, int):
+            return value
+        return int(result_code)
     except Exception:
-        s = (str(x) if x is not None else "").strip().lower()
-        if s in ("success", "normal disconnection"):
+        text = (str(result_code) if result_code is not None else "").strip().lower()
+        if text in ("success", "normal disconnection"):
             return 0
-        m = re.search(r"(\d+)", s)
-        return int(m.group(1)) if m else -1
+        match = re.search(r"(\d+)", text)
+        return int(match.group(1)) if match else -1
 
 
-class FactorPlugin(octoprint.plugin.SettingsPlugin,
-                   octoprint.plugin.AssetPlugin,
-                   octoprint.plugin.TemplatePlugin,
-                   octoprint.plugin.StartupPlugin,
-                   octoprint.plugin.ShutdownPlugin,
-                   octoprint.plugin.EventHandlerPlugin,
-                   octoprint.plugin.BlueprintPlugin,
-                 octoprint.plugin.WizardPlugin):
-    
+class FactorPlugin(
+    octoprint.plugin.SettingsPlugin,
+    octoprint.plugin.AssetPlugin,
+    octoprint.plugin.TemplatePlugin,
+    octoprint.plugin.StartupPlugin,
+    octoprint.plugin.ShutdownPlugin,
+    octoprint.plugin.EventHandlerPlugin,
+    octoprint.plugin.BlueprintPlugin,
+    octoprint.plugin.WizardPlugin
+):
+
     def __init__(self):
         super().__init__()
         self.mqtt_client = None
         self.is_connected = False
         self._snapshot_timer = None
-        self._snapshot_timer_lock = __import__("threading").Lock()
+        self._snapshot_timer_lock = threading.Lock()
         self._gcode_jobs = {}
-        # camera process state
         self._camera_proc = None
         self._camera_started_at = None
         self._camera_last_error = None
-        # Temporary instance ID (not saved until registration is complete)
         self._temp_instance_id = None
-        # Position tracking
-        self._current_position = {"x": None, "y": None, "z": None, "e": None}  # Machine coordinates (accumulated)
-        self._target_position = {"x": None, "y": None, "z": None, "e": None}   # G-code target coordinates
-        self._position_offset = {"x": None, "y": None, "z": None, "e": None}   # Offset at print start
-        self._position_lock = __import__("threading").Lock()
-        self._is_absolute_positioning = True  # G90 (absolute) by default
+        self._current_position = {"x": None, "y": None, "z": None, "e": None}
+        self._target_position = {"x": None, "y": None, "z": None, "e": None}
+        self._position_offset = {"x": None, "y": None, "z": None, "e": None}
+        self._position_lock = threading.Lock()
+        self._is_absolute_positioning = True
+        self._path_history = []
+        self._path_history_max = 10000
+        self._last_recorded_position = {"x": 0, "y": 0, "z": 0, "e": 0}
 
-        # Path history tracking (OctoPrint GCode Viewer style)
-        self._path_history = []  # List of path segments: [{prevX, prevY, x, y, z, extrude, move, retract, tool}]
-        self._path_history_max = 10000  # Maximum number of path segments to keep
-        self._last_recorded_position = {"x": 0, "y": 0, "z": 0, "e": 0}  # Last recorded position for path tracking
-    
-    ##~~ SettingsPlugin mixin
-    
     def get_settings_defaults(self):
         return dict(
             broker_host="factor.io.kr",
@@ -105,84 +95,49 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             receive_topic_suffix="gcode_in",
             receive_target_default="local_print",
             receive_timeout_sec=300,
-            camera=dict(
-                stream_url=""
-            )
-
+            camera=dict(stream_url="")
         )
-    
+
     def get_settings_version(self):
         return 1
-    
+
     def on_settings_save(self, data):
         octoprint.plugin.SettingsPlugin.on_settings_save(self, data)
         self._disconnect_mqtt()
         self._connect_mqtt()
-        # Timer will start automatically on successful connection
-    
-    ##~~ AssetPlugin mixin
 
     def get_assets(self):
         return dict(
             js=["js/i18n.js", "js/factor.js"],
             css=["css/factor.css"]
         )
-    
-    ##~~ TemplatePlugin mixin
+
     def on_startup(self, host, port):
         self._connect_mqtt()
         try:
             self._log_api_endpoints(host, port)
         except Exception as e:
             self._logger.warning("Error logging endpoints: %s", e)
-    
+
     def on_after_startup(self):
-        """Post-startup initialization tasks"""
-        # No busy-wait. Timer can be started early if needed
-        # and tick can check is_connected status
         pass
 
-
-    # --- Utility methods below ---
-    def _log_api_endpoints(self, host: str, port: int):
-        """
-        Log available API endpoints to console (octoprint.log) on plugin load
-        """
-        # Consider baseUrl set by reverse proxy, etc.
+    def _log_api_endpoints(self, host, port):
         base_url = self._settings.global_get(["server", "baseUrl"]) or ""
         base_url = base_url.rstrip("/")
-
-        # Based on actual internal binding address (OctoPrint service perspective)
         internal_base = f"http://{host}:{port}{base_url}"
-        pid = __plugin_identifier__
-
-        status_url = f"{internal_base}/api/plugin/{pid}/status"
-        test_url   = f"{internal_base}/api/plugin/{pid}/test"
-
+        plugin_id = __plugin_identifier__
         self._logger.info("[FACTOR] REST endpoints ready:")
-        self._logger.info(" - GET  %s", status_url)
-        self._logger.info(" - POST %s", test_url)
-        self._logger.info("   (header 'X-Api-Key' required)")
+        self._logger.info(" - GET  %s/api/plugin/%s/status", internal_base, plugin_id)
+        self._logger.info(" - POST %s/api/plugin/%s/test", internal_base, plugin_id)
 
     def get_template_configs(self):
         return [
-            dict(
-                type="settings",
-                name="FACTOR",
-                template="factor_settings.jinja2",
-                custom_bindings=True
-            ),
-            dict(
-                type="wizard",
-                template="factor_wizard.jinja2",
-                custom_bindings=True
-            )
+            dict(type="settings", name="FACTOR", template="factor_settings.jinja2", custom_bindings=True),
+            dict(type="wizard", template="factor_wizard.jinja2", custom_bindings=True)
         ]
 
-    ##~~ WizardPlugin mixin
-
     def is_wizard_required(self):
-        # Show wizard if device is not registered yet
         return not self._settings.get_boolean(["registered"])
 
     def get_wizard_version(self):
@@ -191,22 +146,17 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
     def get_wizard_details(self):
         return dict()
 
-    ##~~ ShutdownPlugin mixin
-    
     def on_shutdown(self):
         self._disconnect_mqtt()
-    
-    ##~~ EventHandlerPlugin mixin
-    
+
     def on_event(self, event, payload):
         if not self.is_connected:
             return
 
-        # Handle PrintStarted event to capture position offset
         if event == "PrintStarted":
             self._capture_position_offset()
-            self._clear_path_history()  # Clear path history on new print
-        elif event == "PrintDone" or event == "PrintFailed" or event == "PrintCancelled":
+            self._clear_path_history()
+        elif event in ("PrintDone", "PrintFailed", "PrintCancelled"):
             self._reset_position_offset()
 
         topic_prefix = self._settings.get(["topic_prefix"])
@@ -219,9 +169,7 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             self._publish_temperature(payload, topic_prefix)
         elif event == "GcodeReceived":
             self._publish_gcode(payload, topic_prefix)
-    
-    ##~~ Private methods
-    
+
     def _connect_mqtt(self):
         try:
             import paho.mqtt.client as mqtt
@@ -229,13 +177,11 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
 
             self.mqtt_client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
 
-            # Set authentication credentials
             username = self._settings.get(["broker_username"])
             password = self._settings.get(["broker_password"])
             if username:
                 self.mqtt_client.username_pw_set(username, password)
 
-            # TLS/SSL configuration
             use_tls = self._settings.get(["broker_use_tls"])
             if use_tls:
                 tls_insecure = self._settings.get(["broker_tls_insecure"])
@@ -245,159 +191,120 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                 if tls_insecure:
                     tls_context.check_hostname = False
                     tls_context.verify_mode = ssl.CERT_NONE
-                    self._logger.warning("MQTT TLS certificate verification is disabled. Not recommended for production environments.")
+                    self._logger.warning("MQTT TLS certificate verification disabled")
                 elif ca_cert:
                     tls_context.load_verify_locations(cafile=ca_cert)
 
                 self.mqtt_client.tls_set_context(tls_context)
-                self._logger.info("MQTT TLS/SSL enabled.")
+                self._logger.info("MQTT TLS/SSL enabled")
 
-            # Set callback functions
             self.mqtt_client.on_connect = self._on_mqtt_connect
             self.mqtt_client.on_disconnect = self._on_mqtt_disconnect
             self.mqtt_client.on_publish = self._on_mqtt_publish
             self.mqtt_client.on_log = self._on_mqtt_log
             self.mqtt_client.on_message = self._on_mqtt_message
 
-            # Reconnection settings
             self.mqtt_client.reconnect_delay_set(min_delay=1, max_delay=120)
 
-            # Asynchronous connection
             host = self._settings.get(["broker_host"])
             port = int(self._settings.get(["broker_port"]))
             protocol = "mqtts" if use_tls else "mqtt"
-            # Username not displayed in logs (security)
-            self._logger.info(f"Attempting MQTT async connection: {protocol}://{host}:{port}")
+            self._logger.info(f"MQTT connecting: {protocol}://{host}:{port}")
 
-            # Start async connection with connect_async
             self.mqtt_client.connect_async(host, port, 60)
             self.mqtt_client.loop_start()
 
         except Exception as e:
             self._logger.error(f"MQTT connection failed: {e}")
-    
+
     def _disconnect_mqtt(self):
         if self.mqtt_client:
             self.mqtt_client.loop_stop()
             self.mqtt_client.disconnect()
             self.mqtt_client = None
             self.is_connected = False
-            self._logger.info("MQTT client disconnected.")
-    
+            self._logger.info("MQTT client disconnected")
+
     def _subscribe_mqtt_topics(self):
-        """Subscribe to MQTT topics using current instance_id"""
+        """Subscribe to MQTT topics using current instance_id."""
         if not self.is_connected or not self.mqtt_client:
             self._logger.warning("Cannot subscribe: MQTT not connected")
             return
 
         try:
             qos = int(self._settings.get(["qos_level"]) or 1)
-            # Use temporary ID first (for setup), then saved ID (for registered devices)
-            # SECURITY: Never fall back to "unknown" - this could cause multiple instances
-            # to subscribe to the same topic and receive each other's commands
-            inst = self._get_required_instance_id(context="MQTT topic subscription")
+            instance_id = self._get_required_instance_id(context="MQTT topic subscription")
 
-            # Unsubscribe from old topics if they exist
-            if hasattr(self, '_current_subscribed_id') and self._current_subscribed_id != inst:
-                old_inst = self._current_subscribed_id
+            if hasattr(self, '_current_subscribed_id') and self._current_subscribed_id != instance_id:
+                old_id = self._current_subscribed_id
                 old_topics = [
-                    f"control/{old_inst}",
-                    f"octoprint/gcode_in/{old_inst}",
-                    f"camera/{old_inst}/cmd",
-                    f"device/{old_inst}/registration"
+                    f"control/{old_id}",
+                    f"octoprint/gcode_in/{old_id}",
+                    f"camera/{old_id}/cmd",
+                    f"device/{old_id}/registration"
                 ]
                 for topic in old_topics:
                     self.mqtt_client.unsubscribe(topic)
-                self._logger.info(f"[FACTOR] Unsubscribed from old topics with ID: {old_inst}")
+                self._logger.info(f"[FACTOR] Unsubscribed from old topics: {old_id}")
 
-            # Subscribe to new topics
-            control_topic = f"control/{inst}"
-            gcode_topic = f"octoprint/gcode_in/{inst}"
-            camera_cmd = f"camera/{inst}/cmd"
-            registration_topic = f"device/{inst}/registration"
+            topics = [
+                f"control/{instance_id}",
+                f"octoprint/gcode_in/{instance_id}",
+                f"camera/{instance_id}/cmd",
+                f"device/{instance_id}/registration"
+            ]
 
-            self.mqtt_client.subscribe(control_topic, qos=qos)
-            self.mqtt_client.subscribe(gcode_topic, qos=qos)
-            self.mqtt_client.subscribe(camera_cmd, qos=qos)
-            self.mqtt_client.subscribe(registration_topic, qos=qos)
+            for topic in topics:
+                self.mqtt_client.subscribe(topic, qos=qos)
 
-            self._current_subscribed_id = inst
-            self._logger.info(f"[FACTOR] Subscribed to topics with ID: {inst}")
+            self._current_subscribed_id = instance_id
+            self._logger.info(f"[FACTOR] Subscribed to topics: {instance_id}")
         except Exception as e:
             self._logger.warning(f"[FACTOR] Subscribe failed: {e}")
 
     def _on_mqtt_connect(self, client, userdata, flags, rc, properties=None, *args, **kwargs):
-        rc_i = _as_code(rc)
-        self.is_connected = (rc_i == 0)
+        result_code = _parse_mqtt_result_code(rc)
+        self.is_connected = (result_code == 0)
         if self.is_connected:
-            inst = self._temp_instance_id or self._settings.get(["instance_id"])
-            self._logger.info(f"[FACTOR] MQTT broker connection OK - Instance ID: {inst or '(not yet assigned)'}")
-            self._start_snapshot_timer()     # Start here
-            # Only subscribe if we have an instance ID
-            if inst:
+            instance_id = self._temp_instance_id or self._settings.get(["instance_id"])
+            self._logger.info(f"[FACTOR] MQTT connected - Instance: {instance_id or '(none)'}")
+            self._start_snapshot_timer()
+            if instance_id:
                 self._subscribe_mqtt_topics()
             else:
-                self._logger.warning("[FACTOR] Skipping topic subscription: no instance ID yet")
+                self._logger.warning("[FACTOR] No instance ID, skipping subscription")
         else:
-            self._logger.error(f"[FACTOR] MQTT connection failed rc={rc}")
+            self._logger.error(f"[FACTOR] MQTT connection failed: {rc}")
 
     def _on_mqtt_disconnect(self, client, userdata, rc, properties=None, *args, **kwargs):
-        rc_i = _as_code(rc)
         self.is_connected = False
-        self._logger.warning(f"MQTT connection lost rc={rc}")
-        # Timer can be kept running or stopped. Keeping it allows auto-publish after reconnect
-        # Uncomment below to stop timer:
-        # self._stop_snapshot_timer()
-    
-    def _on_mqtt_publish(self, client, userdata, mid, *args, **kwargs):
-        # paho 2.0: (mid, properties)
-        # paho 2.1+: (mid, reasonCode, properties)
-        reasonCode = None
-        properties = None
-        if len(args) == 1:
-            properties = args[0]
-        elif len(args) >= 2:
-            reasonCode, properties = args[0], args[1]
+        self._logger.warning(f"MQTT disconnected: {rc}")
 
-        if reasonCode is not None:
-            try:
-                rc_i = _as_code(reasonCode)  # 이미 위에 정의됨
-            except Exception:
-                rc_i = None
-            if rc_i is not None:
-                self._logger.debug(f"MQTT publish mid={mid} rc={rc_i}")
-            else:
-                self._logger.debug(f"MQTT publish mid={mid} rc={reasonCode}")
-        else:
-            self._logger.debug(f"MQTT publish mid={mid}")
-        
+    def _on_mqtt_publish(self, client, userdata, mid, *args, **kwargs):
+        self._logger.debug(f"MQTT publish: mid={mid}")
+
     def _on_mqtt_log(self, client, userdata, level, buf):
-        """MQTT log callback - for connection debugging"""
-        if level == 1:  # DEBUG level
+        if level == 1:
             self._logger.debug(f"MQTT: {buf}")
-        elif level == 2:  # INFO level
+        elif level == 2:
             self._logger.info(f"MQTT: {buf}")
-        elif level == 4:  # WARNING level
+        elif level == 4:
             self._logger.warning(f"MQTT: {buf}")
-        elif level == 8:  # ERROR level
+        elif level == 8:
             self._logger.error(f"MQTT: {buf}")
-    
+
     def _on_mqtt_message(self, client, userdata, msg):
         try:
             topic = msg.topic or ""
-            # Use temporary ID first during setup, then saved ID for registered devices
-            # SECURITY: Do not process messages if we don't have a valid instance ID
-            inst = self._temp_instance_id or self._settings.get(["instance_id"])
-            if not inst:
-                self._logger.warning(f"[FACTOR] Ignoring message on topic {topic}: no instance ID configured")
+            instance_id = self._temp_instance_id or self._settings.get(["instance_id"])
+            if not instance_id:
+                self._logger.warning(f"[FACTOR] No instance ID, ignoring: {topic}")
                 return
 
-            # Log all incoming messages for debugging
             payload_preview = str(msg.payload[:100]) if msg.payload else ""
-            self._logger.debug(f"[FACTOR] MQTT message received - Topic: {topic}, Payload preview: {payload_preview}")
+            self._logger.debug(f"[FACTOR] Message: {topic}, preview: {payload_preview}")
 
-            # 1) Control: control/<instance_id>
-            if topic == f"control/{inst}":
+            if topic == f"control/{instance_id}":
                 payload = msg.payload.decode("utf-8", errors="ignore") if isinstance(msg.payload, (bytes, bytearray)) else str(msg.payload or "")
                 try:
                     data = json.loads(payload or "{}")
@@ -406,8 +313,7 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                 self._handle_control_message(data)
                 return
 
-            # 2) G-code in: octoprint/gcode_in/<instance_id>
-            if topic == f"octoprint/gcode_in/{inst}":
+            if topic == f"octoprint/gcode_in/{instance_id}":
                 if not bool(self._settings.get(["receive_gcode_enabled"])):
                     return
                 payload = msg.payload.decode("utf-8", errors="ignore") if isinstance(msg.payload, (bytes, bytearray)) else str(msg.payload or "")
@@ -415,14 +321,12 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                 self._handle_gcode_message(data)
                 return
 
-            # 3) Camera control: camera/<instance_id>/cmd
-            if topic == f"camera/{inst}/cmd":
+            if topic == f"camera/{instance_id}/cmd":
                 payload = msg.payload.decode("utf-8", errors="ignore") if isinstance(msg.payload, (bytes, bytearray)) else str(msg.payload or "")
                 try:
                     data = json.loads(payload or "{}")
                 except Exception:
                     data = {}
-                # camera 명령은 control 핸들러로 위임 (type=camera)
                 if isinstance(data, dict):
                     data = {"type": "camera", **data}
                 else:
@@ -430,51 +334,41 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                 self._handle_control_message(data)
                 return
 
-            # 4) Registration confirmation: device/<instance_id>/registration
-            registration_topic = f"device/{inst}/registration"
+            registration_topic = f"device/{instance_id}/registration"
             if self._temp_instance_id:
-                registration_topic_temp = f"device/{self._temp_instance_id}/registration"
-                if topic == registration_topic or topic == registration_topic_temp:
+                temp_topic = f"device/{self._temp_instance_id}/registration"
+                if topic == registration_topic or topic == temp_topic:
                     payload = msg.payload.decode("utf-8", errors="ignore") if isinstance(msg.payload, (bytes, bytearray)) else str(msg.payload or "")
-                    self._logger.info(f"[FACTOR] Received registration message on topic {topic}: {payload}")
+                    self._logger.info(f"[FACTOR] Registration message: {payload}")
                     try:
                         data = json.loads(payload or "{}")
                         status = data.get("status")
-                        self._logger.info(f"[FACTOR] Registration message parsed - status: {status}, data: {data}")
 
-                        if status == "registered" or status == "registration_confirmed":
-                            # Save registration permanently
-                            instance_id = self._temp_instance_id or inst
-                            self._settings.set(["instance_id"], instance_id)
+                        if status in ("registered", "registration_confirmed"):
+                            final_id = self._temp_instance_id or instance_id
+                            self._settings.set(["instance_id"], final_id)
                             self._settings.set(["registered"], True)
                             self._settings.save()
 
-                            self._logger.info(f"✅ Device registration confirmed via MQTT: {instance_id}")
+                            self._logger.info(f"[FACTOR] Registration confirmed: {final_id}")
 
-                            # Send confirmation back to server via MQTT
-                            confirmation_payload = {
+                            confirmation = {
                                 "status": "confirmed",
-                                "instance_id": instance_id,
+                                "instance_id": final_id,
                                 "confirmed_at": data.get("registered_at")
                             }
-                            confirmation_topic = f"device/{instance_id}/registration/ack"
                             try:
                                 self.mqtt_client.publish(
-                                    confirmation_topic,
-                                    json.dumps(confirmation_payload),
+                                    f"device/{final_id}/registration/ack",
+                                    json.dumps(confirmation),
                                     qos=1
                                 )
-                                self._logger.info(f"[FACTOR] Sent registration confirmation to server: {confirmation_topic}")
                             except Exception as e:
-                                self._logger.error(f"Failed to send registration confirmation: {e}")
+                                self._logger.error(f"Registration ack failed: {e}")
 
-                            # Clear temporary instance ID
                             self._temp_instance_id = None
-
-                            # Unsubscribe from registration topic
                             self.mqtt_client.unsubscribe(topic)
 
-                            # Send plugin message to update UI
                             self._plugin_manager.send_plugin_message(
                                 self._identifier,
                                 dict(
@@ -484,19 +378,14 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                                 )
                             )
 
-                        elif status == "timeout" or status == "failed":
-                            # Handle failure/timeout
+                        elif status in ("timeout", "failed"):
                             error_msg = data.get("error", f"Registration {status}")
                             error_code = data.get("error_code")
-                            self._logger.warning(f"❌ Device registration {status}: {error_msg}" + (f" (code: {error_code})" if error_code else ""))
+                            self._logger.warning(f"[FACTOR] Registration {status}: {error_msg}")
 
-                            # Unsubscribe from registration topic
                             self.mqtt_client.unsubscribe(topic)
-
-                            # Clear temporary instance ID - ready for new registration
                             self._temp_instance_id = None
 
-                            # Send failure notification to UI
                             self._plugin_manager.send_plugin_message(
                                 self._identifier,
                                 dict(
@@ -508,192 +397,161 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                                 )
                             )
                     except Exception as e:
-                        self._logger.error(f"Failed to process registration message: {e}")
+                        self._logger.error(f"Registration processing failed: {e}")
                     return
-
-            # Ignore other topics
-            return
         except Exception as e:
-            self._logger.exception(f"[FACTOR] on_message processing error: {e}")
+            self._logger.exception(f"[FACTOR] Message processing error: {e}")
 
-    def _handle_gcode_message(self, data: dict):
-        # Delegate to modularized implementation
+    def _handle_gcode_message(self, data):
         try:
-            from .mqtt_gcode import handle_gcode_message as _impl
-            _impl(self, data)
+            from .mqtt_gcode import handle_gcode_message
+            handle_gcode_message(self, data)
         except Exception as e:
             self._logger.exception(f"GCODE handler error: {e}")
 
-    def _handle_control_message(self, data: dict):
-        t = (data.get("type") or "").lower()
+    def _handle_control_message(self, data):
+        cmd_type = (data.get("type") or "").lower()
         try:
             from .control import (
-                pause_print as _pause,
-                resume_print as _resume,
-                cancel_print as _cancel,
-                home_axes as _home,
-                move_axes as _move,
-                set_temperature as _set_temp,
-                set_feed_rate as _set_feed,
-                set_fan_speed as _set_fan
+                pause_print, resume_print, cancel_print,
+                home_axes, move_axes, set_temperature,
+                set_feed_rate, set_fan_speed
             )
         except Exception:
-            _pause = _resume = _cancel = _home = _move = _set_temp = _set_feed = _set_fan = None
-        # ---- camera control via MQTT ----
-        if t == "camera":
+            pause_print = resume_print = cancel_print = None
+            home_axes = move_axes = set_temperature = None
+            set_feed_rate = set_fan_speed = None
+
+        if cmd_type == "camera":
             action = (data.get("action") or "").lower()
             opts = data.get("options") or {}
             if action == "start":
-                res = self._camera_start(opts)
+                result = self._camera_start(opts)
                 self._publish_camera_state()
-                self._logger.info(f"[CONTROL] camera start -> {res}")
-                return
-            if action == "stop":
-                res = self._camera_stop(opts)
+                self._logger.info(f"[CONTROL] camera start: {result}")
+            elif action == "stop":
+                result = self._camera_stop(opts)
                 self._publish_camera_state()
-                self._logger.info(f"[CONTROL] camera stop -> {res}")
-                return
-            if action == "restart":
+                self._logger.info(f"[CONTROL] camera stop: {result}")
+            elif action == "restart":
                 self._camera_stop(opts)
                 time.sleep(0.4)
-                res = self._camera_start(opts)
+                result = self._camera_start(opts)
                 self._publish_camera_state()
-                self._logger.info(f"[CONTROL] camera restart -> {res}")
-                return
-            if action == "state":
+                self._logger.info(f"[CONTROL] camera restart: {result}")
+            elif action == "state":
                 self._publish_camera_state()
-                return
-        if t == "pause":
-            res = _pause(self) if _pause else {"error": "control module unavailable"}
-            self._logger.info(f"[CONTROL] pause -> {res}")
             return
-        if t == "resume":
-            res = _resume(self) if _resume else {"error": "control module unavailable"}
-            self._logger.info(f"[CONTROL] resume -> {res}")
-            return
-        if t == "cancel":
-            res = _cancel(self) if _cancel else {"error": "control module unavailable"}
-            self._logger.info(f"[CONTROL] cancel -> {res}")
-            return
-        if t == "home":
-            axes_s = (data.get("axes") or "XYZ")
-            axes_s = axes_s if isinstance(axes_s, str) else "".join(axes_s)
+
+        if cmd_type == "pause":
+            result = pause_print(self) if pause_print else {"error": "unavailable"}
+            self._logger.info(f"[CONTROL] pause: {result}")
+        elif cmd_type == "resume":
+            result = resume_print(self) if resume_print else {"error": "unavailable"}
+            self._logger.info(f"[CONTROL] resume: {result}")
+        elif cmd_type == "cancel":
+            result = cancel_print(self) if cancel_print else {"error": "unavailable"}
+            self._logger.info(f"[CONTROL] cancel: {result}")
+        elif cmd_type == "home":
+            axes_str = data.get("axes") or "XYZ"
+            axes_str = axes_str if isinstance(axes_str, str) else "".join(axes_str)
             axes = []
-            s = (axes_s or "").lower()
-            if "x" in s: axes.append("x")
-            if "y" in s: axes.append("y")
-            if "z" in s: axes.append("z")
+            s = (axes_str or "").lower()
+            if "x" in s:
+                axes.append("x")
+            if "y" in s:
+                axes.append("y")
+            if "z" in s:
+                axes.append("z")
             if not axes:
                 axes = ["x", "y", "z"]
-            res = _home(self, axes) if _home else {"error": "control module unavailable"}
-            self._logger.info(f"[CONTROL] home {axes} -> {res}")
-            return
-        if t == "move":
+            result = home_axes(self, axes) if home_axes else {"error": "unavailable"}
+            self._logger.info(f"[CONTROL] home {axes}: {result}")
+        elif cmd_type == "move":
             mode = (data.get("mode") or "relative").lower()
-            x = data.get("x"); y = data.get("y"); z = data.get("z"); e = data.get("e")
+            x = data.get("x")
+            y = data.get("y")
+            z = data.get("z")
+            e = data.get("e")
             feedrate = data.get("feedrate") or 1000
-            res = _move(self, mode, x, y, z, e, feedrate) if _move else {"error": "control module unavailable"}
-            self._logger.info(f"[CONTROL] move mode={mode} x={x} y={y} z={z} e={e} F={feedrate} -> {res}")
-            return
-        if t == "set_temperature":
+            result = move_axes(self, mode, x, y, z, e, feedrate) if move_axes else {"error": "unavailable"}
+            self._logger.info(f"[CONTROL] move: {result}")
+        elif cmd_type == "set_temperature":
             tool = int(data.get("tool", 0))
             temperature = float(data.get("temperature", 0))
             wait = bool(data.get("wait", False))
-            res = _set_temp(self, tool, temperature, wait) if _set_temp else {"error": "control module unavailable"}
-            self._logger.info(f"[CONTROL] set_temperature tool={tool} temp={temperature} wait={wait} -> {res}")
-            return
-        if t == "set_feed_rate" or t == "feed_rate":
+            result = set_temperature(self, tool, temperature, wait) if set_temperature else {"error": "unavailable"}
+            self._logger.info(f"[CONTROL] set_temperature: {result}")
+        elif cmd_type in ("set_feed_rate", "feed_rate"):
             factor = float(data.get("factor") or data.get("speed") or 100)
-            res = _set_feed(self, factor) if _set_feed else {"error": "control module unavailable"}
-            self._logger.info(f"[CONTROL] set_feed_rate factor={factor} -> {res}")
-            return
-        if t == "set_fan_speed" or t == "fan_speed":
+            result = set_feed_rate(self, factor) if set_feed_rate else {"error": "unavailable"}
+            self._logger.info(f"[CONTROL] set_feed_rate: {result}")
+        elif cmd_type in ("set_fan_speed", "fan_speed"):
             speed = int(data.get("speed") or 0)
-            res = _set_fan(self, speed) if _set_fan else {"error": "control module unavailable"}
-            self._logger.info(f"[CONTROL] set_fan_speed speed={speed} -> {res}")
-            return
-        self._logger.warning(f"[CONTROL] unknown type={t}")
+            result = set_fan_speed(self, speed) if set_fan_speed else {"error": "unavailable"}
+            self._logger.info(f"[CONTROL] set_fan_speed: {result}")
+        else:
+            self._logger.warning(f"[CONTROL] unknown type: {cmd_type}")
 
-    # finalize function moved to module
-
-    def _gc_expired_jobs(self, now: float = None):
+    def _gc_expired_jobs(self, now=None):
         try:
             if now is None:
                 now = time.time()
             timeout = int(self._settings.get(["receive_timeout_sec"]) or 300)
             expired = []
-            for job_id, st in self._gcode_jobs.items():
-                if now - (st.get("last_ts") or st.get("created_ts") or now) > timeout:
+            for job_id, state in self._gcode_jobs.items():
+                if now - (state.get("last_ts") or state.get("created_ts") or now) > timeout:
                     expired.append(job_id)
             for job_id in expired:
                 self._gcode_jobs.pop(job_id, None)
             if expired:
                 self._logger.warning(f"[FACTOR] Cleared expired jobs: {expired}")
         except Exception as e:
-            self._logger.error(f"[FACTOR] Error cleaning up jobs: {e}")
-    
+            self._logger.error(f"[FACTOR] Job cleanup error: {e}")
+
     def _check_mqtt_connection_status(self):
-        """Check MQTT connection status."""
         if not self.mqtt_client:
             return False
-
         try:
-            # Check connection status
             if self.mqtt_client.is_connected():
                 return True
-            else:
-                # If not connected, only log (reconnect is handled automatically)
-                self._logger.debug("MQTT connection is down.")
-                return False
-        except Exception as e:
-            self._logger.error(f"Error checking MQTT connection status: {e}")
+            self._logger.debug("MQTT connection is down")
             return False
-    
+        except Exception as e:
+            self._logger.error(f"MQTT status check error: {e}")
+            return False
+
     def _publish_status(self, payload, topic_prefix):
         if not self._settings.get(["publish_status"]):
             return
-
-        import json
         try:
-            inst = self._get_required_instance_id(context="status publish")
+            instance_id = self._get_required_instance_id(context="status publish")
         except InstanceIdRequiredError:
-            self._logger.debug("[FACTOR] Skipping status publish: no instance ID")
             return
-        topic = f"{topic_prefix}/status/{inst}"
-        message = json.dumps(payload)
-        self._publish_message(topic, message)
-    
+        topic = f"{topic_prefix}/status/{instance_id}"
+        self._publish_message(topic, json.dumps(payload))
+
     def _publish_progress(self, payload, topic_prefix):
         if not self._settings.get(["publish_progress"]):
             return
-        
-        import json
         topic = f"{topic_prefix}/progress"
-        message = json.dumps(payload)
-        self._publish_message(topic, message)
-    
+        self._publish_message(topic, json.dumps(payload))
+
     def _publish_temperature(self, payload, topic_prefix):
         if not self._settings.get(["publish_temperature"]):
             return
-        
-        import json
         topic = f"{topic_prefix}/temperature"
-        message = json.dumps(payload)
-        self._publish_message(topic, message)
-    
+        self._publish_message(topic, json.dumps(payload))
+
     def _publish_gcode(self, payload, topic_prefix):
         if not self._settings.get(["publish_gcode"]):
             return
-        
-        import json
         topic = f"{topic_prefix}/gcode"
-        message = json.dumps(payload)
-        self._publish_message(topic, message)
-    
+        self._publish_message(topic, json.dumps(payload))
+
     def _publish_message(self, topic, message):
         if not self.is_connected or not self.mqtt_client:
             return
-        
         try:
             import paho.mqtt.client as mqtt
             qos = self._settings.get(["qos_level"])
@@ -701,83 +559,68 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             result = self.mqtt_client.publish(topic, message, qos=qos, retain=retain)
 
             if result.rc == mqtt.MQTT_ERR_SUCCESS:
-                self._logger.debug(f"Message published successfully: {topic}")
+                self._logger.debug(f"Published: {topic}")
             else:
-                self._logger.error(f"Message publish failed: {topic}, error code: {result.rc}")
-
+                self._logger.error(f"Publish failed: {topic}, rc={result.rc}")
         except Exception as e:
-            self._logger.error(f"Error publishing message: {e}")
-    
-    # ---- Camera helpers ----
-    # Configure camera pipeline specifically for WebRTC(MediaMTX)
+            self._logger.error(f"Publish error: {e}")
+
     @staticmethod
-    def _safe_int(x, default=0):
+    def _safe_int(value, default=0):
         try:
-            return int(x)
+            return int(value)
         except Exception:
             return default
 
     @staticmethod
-    def _safe_bool(x, default=False):
+    def _safe_bool(value, default=False):
         try:
-            return bool(x)
+            return bool(value)
         except Exception:
             return default
 
-
-    def _pick_encoder(self, encoder_opt: str) -> list:
+    def _pick_encoder(self, encoder_opt):
         enc = (encoder_opt or "").lower()
-        # Raspberry Pi (Bullseye and later): v4l2m2m
         if enc in ("v4l2m2m", "h264_v4l2m2m", "v4l2"):
             return ["-c:v", "h264_v4l2m2m"]
-        # Some older/custom systems: omx
         if enc in ("omx", "h264_omx"):
             return ["-c:v", "h264_omx"]
-        # Default: software encoder
         return ["-c:v", "libx264", "-tune", "zerolatency"]
 
-    def _validate_url(self, url: str) -> bool:
+    def _validate_url(self, url):
         """Validate URL to prevent command injection."""
         if not url:
             return False
-        # Allow only safe protocols
         if not re.match(r'^(http://|https://|rtsp://|/dev/video\d+)', url):
             return False
-        # Prevent command injection characters
         dangerous_chars = [';', '&', '|', '`', '$', '(', ')', '<', '>', '\n', '\r']
         for char in dangerous_chars:
             if char in url:
                 return False
-        # Reasonable length
         if len(url) > 2048:
             return False
         return True
 
-    def _build_webrtc_mediatx_cmd(self, opts: dict):
+    def _build_webrtc_mediatx_cmd(self, opts):
         input_url = (opts.get("input") or opts.get("input_url") or
                      self._settings.get(["camera", "stream_url"]) or "").strip()
         if not input_url:
             raise ValueError("missing input url")
 
-        # Validate input URL to prevent command injection
         if not self._validate_url(input_url):
-            raise ValueError("invalid or potentially dangerous input URL")
+            raise ValueError("invalid or dangerous input URL")
 
-        # Stream name & server address
         name = (opts.get("name") or "cam").strip()
-        # Validate stream name (alphanumeric + underscore + hyphen)
         if not re.match(r'^[a-zA-Z0-9_-]+$', name) or len(name) > 50:
-            self._logger.error(f"[CAMERA] Stream name validation failed - name: '{name}', length: {len(name)}")
             raise ValueError("invalid stream name")
 
-        rtsp_base = (opts.get("rtsp_base")
-                     or os.environ.get("MEDIAMTX_RTSP_BASE")
-                     or "rtsp://factor.io.kr:8554").rstrip("/")
-        webrtc_base = (opts.get("webrtc_base")
-                       or os.environ.get("MEDIAMTX_WEBRTC_BASE")
-                       or "https://factor.io.kr/webrtc").rstrip("/")
+        rtsp_base = (opts.get("rtsp_base") or
+                     os.environ.get("MEDIAMTX_RTSP_BASE") or
+                     "rtsp://factor.io.kr:8554").rstrip("/")
+        webrtc_base = (opts.get("webrtc_base") or
+                       os.environ.get("MEDIAMTX_WEBRTC_BASE") or
+                       "https://factor.io.kr/webrtc").rstrip("/")
 
-        # Validate server URLs
         if not self._validate_url(rtsp_base):
             raise ValueError("invalid rtsp_base URL")
         if not self._validate_url(webrtc_base):
@@ -785,20 +628,17 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
 
         rtsp_url = f"{rtsp_base}/{name}"
 
-        # Quality/frame rate/bitrate (with range validation)
-        fps       = max(0, min(60, self._safe_int(opts.get("fps", 0))))  # 0-60
-        width     = max(0, min(3840, self._safe_int(opts.get("width", 0))))  # 0-3840 (4K)
-        height    = max(0, min(2160, self._safe_int(opts.get("height", 0))))  # 0-2160 (4K)
-        bitrate_k = max(100, min(20000, self._safe_int(opts.get("bitrateKbps", 2000))))  # 100-20000 kbps
-        encoder   = (opts.get("encoder") or "v4l2m2m")
-        # Validate encoder option (whitelist)
+        fps = max(0, min(60, self._safe_int(opts.get("fps", 0))))
+        width = max(0, min(3840, self._safe_int(opts.get("width", 0))))
+        height = max(0, min(2160, self._safe_int(opts.get("height", 0))))
+        bitrate_k = max(100, min(20000, self._safe_int(opts.get("bitrateKbps", 2000))))
+        encoder = opts.get("encoder") or "v4l2m2m"
         allowed_encoders = ["v4l2m2m", "h264_v4l2m2m", "v4l2", "omx", "h264_omx", "libx264"]
         if encoder not in allowed_encoders:
             encoder = "v4l2m2m"
-        low_lat   = self._safe_bool(opts.get("lowLatency", True))
-        force_mj  = self._safe_bool(opts.get("forceMjpeg", False))
+        low_lat = self._safe_bool(opts.get("lowLatency", True))
+        force_mj = self._safe_bool(opts.get("forceMjpeg", False))
 
-        # Basic low-latency/network recovery options (duplicates removed)
         cmd = [
             "ffmpeg",
             "-hide_banner", "-loglevel", "info",
@@ -810,19 +650,16 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
         if low_lat:
             cmd += ["-flags", "low_delay"]
 
-        # Input protocol specific optimizations
         if input_url.startswith("/dev/video"):
             cmd += ["-f", "v4l2"]
         elif input_url.startswith("rtsp://"):
             cmd += ["-rtsp_transport", "tcp"]
 
-        # Specify for HTTP MJPEG
         if force_mj and input_url.startswith(("http://", "https://")):
             cmd += ["-f", "mjpeg"]
 
         cmd += ["-i", input_url]
 
-        # Filter chain: fps / scale / pixel format
         vf_chain = []
         if fps > 0:
             vf_chain.append(f"fps={fps}")
@@ -831,13 +668,10 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
         vf_chain.append("format=yuv420p")
         cmd += ["-vf", ",".join(vf_chain)]
 
-        # Encoder
         cmd += self._pick_encoder(encoder)
 
-        # Keyframe interval (GOP): Recommended ~2s for WebRTC
         gop = (fps * 2) if fps > 0 else 50
 
-        # Rate control/profile
         cmd += [
             "-preset", "veryfast",
             "-profile:v", "baseline",
@@ -845,13 +679,11 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             "-b:v", f"{bitrate_k}k",
             "-maxrate", f"{int(bitrate_k * 11 / 10)}k",
             "-bufsize", f"{bitrate_k}k",
-            "-an",  # Remove audio
+            "-an",
         ]
 
-        # Output: RTSP Publish → MediaMTX
         cmd += ["-f", "rtsp", "-rtsp_transport", "tcp", rtsp_url]
 
-        # WebRTC URL hint for frontend (included in message)
         extra = {
             "play_url_webrtc": f"{webrtc_base}/{name}/",
             "publish_url_rtsp": rtsp_url,
@@ -859,13 +691,12 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
         }
         return cmd, extra
 
-    def _build_camera_cmd(self, opts: dict):
+    def _build_camera_cmd(self, opts):
         return self._build_webrtc_mediatx_cmd(opts)
-
 
     def _camera_status(self):
         running = bool(self._camera_proc and (self._camera_proc.poll() is None))
-        pid = (self._camera_proc.pid if running and self._camera_proc else None)
+        pid = self._camera_proc.pid if running and self._camera_proc else None
         out = {
             "running": running,
             "pid": pid,
@@ -876,9 +707,8 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             out["webrtc"] = self._webrtc_last
         return out
 
-    def _start_ffmpeg_subprocess(self, opts: dict):
+    def _start_ffmpeg_subprocess(self, opts):
         if self._camera_proc and self._camera_proc.poll() is None:
-            # If already running, just update latest URL and return
             built = self._build_camera_cmd(opts)
             if isinstance(built, tuple):
                 _, extra = built
@@ -892,17 +722,14 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             else:
                 cmd, extra = built, {}
 
-            # Platform-specific process group settings
             import sys
             popen_kwargs = {
                 "stdout": subprocess.DEVNULL,
                 "stderr": subprocess.STDOUT
             }
 
-            # Unix/Linux: Create process group
             if sys.platform != "win32" and hasattr(os, "setsid"):
                 popen_kwargs["preexec_fn"] = os.setsid
-            # Windows: Use CREATE_NEW_PROCESS_GROUP flag
             elif sys.platform == "win32":
                 popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
 
@@ -910,7 +737,7 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             self._webrtc_last = extra or {}
             self._camera_started_at = time.time()
             self._camera_last_error = None
-            self._logger.info("[CAMERA] pipeline started pid=%s cmd=%s",
+            self._logger.info("[CAMERA] started pid=%s cmd=%s",
                               self._camera_proc.pid, " ".join(shlex.quote(c) for c in cmd))
             return {"success": True, **self._camera_status()}
         except Exception as e:
@@ -918,16 +745,14 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             self._logger.exception("[CAMERA] start failed")
             return {"success": False, "error": str(e), **self._camera_status()}
 
-    def _stop_ffmpeg_subprocess(self, timeout_sec: float = 5.0):
+    def _stop_ffmpeg_subprocess(self, timeout_sec=5.0):
         try:
             if not (self._camera_proc and self._camera_proc.poll() is None):
                 return {"success": True, "already_stopped": True, **self._camera_status()}
 
             import sys
 
-            # Platform-specific process termination
             if sys.platform == "win32":
-                # Windows: Send CTRL_BREAK_EVENT signal
                 try:
                     self._camera_proc.send_signal(signal.CTRL_BREAK_EVENT)
                 except AttributeError:
@@ -941,12 +766,10 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                 if self._camera_proc.poll() is None:
                     self._camera_proc.kill()
             else:
-                # Unix/Linux: Send signal to process group
                 try:
                     pgid = os.getpgid(self._camera_proc.pid)
                     os.killpg(pgid, signal.SIGTERM)
                 except (OSError, AttributeError):
-                    # Fallback: Terminate individual process
                     self._camera_proc.terminate()
 
                 t0 = time.time()
@@ -960,33 +783,32 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                     except (OSError, AttributeError):
                         self._camera_proc.kill()
 
-            self._logger.info("[CAMERA] ffmpeg stopped")
+            self._logger.info("[CAMERA] stopped")
             return {"success": True, **self._camera_status()}
         except Exception as e:
             self._camera_last_error = str(e)
             self._logger.exception("[CAMERA] stop failed")
             return {"success": False, "error": str(e), **self._camera_status()}
-    # ---------------------------------------------------------
-    # Choose systemd or subprocess
-    def _systemctl(self, unit: str, action: str):
+
+    def _systemctl(self, unit, action):
         try:
             r = subprocess.run(["systemctl", action, unit],
                                capture_output=True, text=True, timeout=8)
             ok = (r.returncode == 0)
             if not ok:
-                self._logger.warning("[CAMERA] systemctl %s %s rc=%s out=%s err=%s",
-                                     action, unit, r.returncode, r.stdout, r.stderr)
+                self._logger.warning("[CAMERA] systemctl %s %s rc=%s",
+                                     action, unit, r.returncode)
             return {"success": ok, "stdout": r.stdout, "stderr": r.stderr, "rc": r.returncode}
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def _camera_start(self, opts: dict):
+    def _camera_start(self, opts):
         unit = (opts.get("systemd_unit") or "").strip()
         if unit:
             return self._systemctl(unit, "start")
         return self._start_ffmpeg_subprocess(opts)
 
-    def _camera_stop(self, opts: dict):
+    def _camera_stop(self, opts):
         unit = (opts.get("systemd_unit") or "").strip()
         if unit:
             return self._systemctl(unit, "stop")
@@ -994,49 +816,32 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
 
     def _publish_camera_state(self):
         try:
-            inst = self._get_required_instance_id(context="camera state publish")
-            topic = f"camera/{inst}/state"
+            instance_id = self._get_required_instance_id(context="camera state publish")
+            topic = f"camera/{instance_id}/state"
             payload = json.dumps(self._camera_status())
             self._publish_message(topic, payload)
         except InstanceIdRequiredError:
-            self._logger.debug("[FACTOR] Skipping camera state publish: no instance ID")
+            pass
         except Exception as e:
-            self._logger.debug(f"publish camera state error: {e}")
-            
-# ==== END Camera helpers ====
-
-
+            self._logger.debug(f"Camera state publish error: {e}")
 
     def _get_sd_tree(self, force_refresh=False, timeout=0.0):
-        """
-        Return sdcard tree as similar as possible to /api/files?recursive=true
-        """
         try:
-            # Method 1: Unify as list format
-            # Full file list (same format as API response)
             local_files = self._file_manager.list_files(FileDestinations.LOCAL)
             files_list = list(local_files.get("local", {}).values())
-            # SD card file list (as list)
             sd_files = self._printer.get_sd_files()
 
-            all_files_payload = {}
-            all_files_payload["local"] = files_list
-            all_files_payload["sdcard"] = sd_files
-
-
-            return all_files_payload
-
+            return {
+                "local": files_list,
+                "sdcard": sd_files
+            }
         except Exception as e:
-            self._logger.debug(f"Failed to retrieve SD tree: {e}")
+            self._logger.debug(f"SD tree retrieval failed: {e}")
             return {}
-
-
-
 
     def _get_printer_summary(self):
         try:
             conn = self._printer.get_current_connection() or {}
-            # OctoPrint often returns (state, port, baudrate, profile) tuple
             state = None
             port = None
             baud = None
@@ -1063,12 +868,6 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                 heated_bed = profile.get("heatedBed")
                 volume = profile.get("volume") or {}
 
-            size = {
-                "width": volume.get("width"),
-                "depth": volume.get("depth"),
-                "height": volume.get("height"),
-            }
-
             return {
                 "connection": {
                     "state": state,
@@ -1082,71 +881,42 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                         "volume": volume,
                     },
                 },
-                "size": size,
+                "size": {
+                    "width": volume.get("width"),
+                    "depth": volume.get("depth"),
+                    "height": volume.get("height"),
+                },
             }
         except Exception as e:
-            self._logger.debug(f"Failed to retrieve summary: {e}")
+            self._logger.debug(f"Printer summary failed: {e}")
             return {}
 
     def _ensure_instance_id(self, force_new=False):
-        """
-        Get or create instance ID.
-        If force_new=True, always generate a new temporary ID.
-        Temporary IDs are NOT saved until registration is confirmed.
-        """
-        # Check if already registered
         saved_id = self._settings.get(["instance_id"])
         if saved_id and not force_new:
             return saved_id
 
-        # Generate new temporary ID or use existing temporary ID
         if force_new or not self._temp_instance_id:
             self._temp_instance_id = str(uuid.uuid4())
-            self._logger.info(f"Generated new temporary instance ID: {self._temp_instance_id}")
+            self._logger.info(f"Generated temp instance ID: {self._temp_instance_id}")
 
         return self._temp_instance_id
 
-    def _get_required_instance_id(self, context: str = "operation") -> str:
-        """
-        Get instance_id, raising an exception if not available.
-
-        This method should be used instead of fallback to "unknown" to prevent
-        security issues where multiple instances could accidentally subscribe
-        to the same generic topic.
-
-        Args:
-            context: Description of the operation requiring instance_id (for logging)
-
-        Returns:
-            The instance_id (either temporary or saved)
-
-        Raises:
-            InstanceIdRequiredError: If neither temporary nor saved instance_id exists
-        """
-        # First check temporary ID (during setup), then saved ID
-        inst = self._temp_instance_id or self._settings.get(["instance_id"])
-        if not inst:
-            error_msg = (
-                f"Instance ID is required for {context} but not available. "
-                "This device needs to be registered first."
-            )
+    def _get_required_instance_id(self, context="operation"):
+        """Get instance_id or raise InstanceIdRequiredError."""
+        instance_id = self._temp_instance_id or self._settings.get(["instance_id"])
+        if not instance_id:
+            error_msg = f"Instance ID required for {context} but not available"
             self._logger.error(f"[FACTOR] {error_msg}")
             raise InstanceIdRequiredError(error_msg)
-        return inst
-
-    ##~~ BlueprintPlugin mixin
+        return instance_id
 
     @octoprint.plugin.BlueprintPlugin.route("/setup-url", methods=["GET"])
     def get_setup_url(self):
-        """Get the setup URL for this device"""
         try:
-            # Get existing temporary ID or create new one (not saved)
-            # Only save after registration is confirmed
             instance_id = self._ensure_instance_id(force_new=False)
 
-            # If MQTT is already connected, resubscribe to correct topics
             if self.is_connected and self.mqtt_client:
-                self._logger.info(f"[FACTOR] Resubscribing to topics with new temp ID: {instance_id}")
                 self._subscribe_mqtt_topics()
 
             setup_url = f"https://factor.io.kr/setup/{instance_id}"
@@ -1157,14 +927,12 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                 "setup_url": setup_url
             }), 200)
         except Exception as e:
-            self._logger.error(f"Setup URL generation error: {e}")
+            self._logger.error(f"Setup URL error: {e}")
             return make_response(jsonify({"error": str(e)}), 500)
 
     @octoprint.plugin.BlueprintPlugin.route("/start-setup", methods=["POST"])
     def start_setup(self):
-        """Called when user clicks 'Open Setup Page' button - subscribe to MQTT topics"""
         try:
-            # Subscribe to MQTT topics with current temporary instance_id
             self._subscribe_mqtt_topics()
 
             return make_response(jsonify({
@@ -1177,7 +945,6 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
 
     @octoprint.plugin.BlueprintPlugin.route("/connection-status", methods=["GET"])
     def get_connection_status(self):
-        """Get current MQTT connection and subscription status"""
         try:
             instance_id = self._temp_instance_id or self._settings.get(["instance_id"])
             registered = self._settings.get_boolean(["registered"])
@@ -1193,19 +960,18 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                 "can_receive_commands": bool(self.is_connected and subscribed_id),
             }
 
-            # Determine overall status message
             if not self.is_connected:
                 status["status"] = "disconnected"
                 status["message"] = "MQTT broker not connected"
             elif not instance_id:
                 status["status"] = "no_instance_id"
-                status["message"] = "No instance ID - click 'Open FACTOR Website' to start setup"
+                status["message"] = "No instance ID"
             elif not subscribed_id:
                 status["status"] = "not_subscribed"
-                status["message"] = "Connected but not subscribed to topics"
+                status["message"] = "Connected but not subscribed"
             elif not registered:
                 status["status"] = "pending_registration"
-                status["message"] = "Waiting for registration confirmation"
+                status["message"] = "Waiting for registration"
             else:
                 status["status"] = "ready"
                 status["message"] = "Connected and ready"
@@ -1217,17 +983,14 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
 
     @octoprint.plugin.BlueprintPlugin.route("/retry-connection", methods=["POST"])
     def retry_connection(self):
-        """Retry MQTT connection and topic subscription"""
         try:
             result = {"actions": []}
 
-            # Reconnect MQTT if needed
             if not self.is_connected:
                 self._disconnect_mqtt()
                 self._connect_mqtt()
                 result["actions"].append("mqtt_reconnect_initiated")
 
-            # Try to subscribe if we have an instance ID
             instance_id = self._temp_instance_id or self._settings.get(["instance_id"])
             if instance_id and self.is_connected:
                 self._subscribe_mqtt_topics()
@@ -1251,103 +1014,92 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                 "pip": "https://github.com/kangbyounggwan/octoprint-factor-plugin/archive/{target_version}.zip",
             }
         }
-    
+
     def _make_snapshot(self):
-        """Generate printer status snapshot."""
-        import time, json
-
-        data  = self._printer.get_current_data() or {}
+        data = self._printer.get_current_data() or {}
         temps = self._printer.get_current_temperatures() or {}
-        conn  = self._printer.get_current_connection() or {}
+        conn = self._printer.get_current_connection() or {}
 
-        progress = (data.get("progress") or {})
-        job      = (data.get("job") or {})
-        fileinfo = (job.get("file") or {})
-        filament = (job.get("filament") or {})
-        flags    = (data.get("state") or {}).get("flags", {})
+        progress = data.get("progress") or {}
+        job = data.get("job") or {}
+        fileinfo = job.get("file") or {}
+        filament = job.get("filament") or {}
+        flags = (data.get("state") or {}).get("flags", {})
 
-        size    = fileinfo.get("size") or 0
+        size = fileinfo.get("size") or 0
         filepos = progress.get("filepos") or 0
-        file_pct = round((filepos/size*100.0), 2) if size else None
+        file_pct = round((filepos / size * 100.0), 2) if size else None
 
-        snapshot = {
-            "ts":        time.time(),
+        return {
+            "ts": time.time(),
             "state": {
                 "text": (data.get("state") or {}).get("text"),
                 "flags": {
                     "operational": bool(flags.get("operational")),
-                    "printing":    bool(flags.get("printing")),
-                    "paused":      bool(flags.get("paused")),
-                    "error":       bool(flags.get("error")),
-                    "ready":       bool(flags.get("ready")),
+                    "printing": bool(flags.get("printing")),
+                    "paused": bool(flags.get("paused")),
+                    "error": bool(flags.get("error")),
+                    "ready": bool(flags.get("ready")),
                 }
             },
             "progress": {
-                "completion": progress.get("completion"),      # %
-                "filepos":    filepos,                         # bytes
-                "file_size":  size,                            # bytes
-                "file_pct":   file_pct,                        # %
-                "print_time": progress.get("printTime"),       # sec
-                "time_left":  progress.get("printTimeLeft"),   # sec
+                "completion": progress.get("completion"),
+                "filepos": filepos,
+                "file_size": size,
+                "file_pct": file_pct,
+                "print_time": progress.get("printTime"),
+                "time_left": progress.get("printTimeLeft"),
                 "time_left_origin": progress.get("printTimeLeftOrigin"),
             },
             "job": {
                 "file": {
-                    "name":   fileinfo.get("name"),
-                    "origin": fileinfo.get("origin"),   # local/sdcard
-                    "date":   fileinfo.get("date"),
+                    "name": fileinfo.get("name"),
+                    "origin": fileinfo.get("origin"),
+                    "date": fileinfo.get("date"),
                 },
                 "estimated_time": job.get("estimatedPrintTime"),
-                "last_time":      job.get("lastPrintTime"),
-                "filament":       filament,            # Keep tool0.length/volume etc. as-is
+                "last_time": job.get("lastPrintTime"),
+                "filament": filament,
             },
             "axes": {
-                "current": self._get_job_coordinates(),  # Convert machine coords to job coords
+                "current": self._get_job_coordinates(),
                 "target": {
                     "x": self._target_position.get("x"),
                     "y": self._target_position.get("y"),
                     "z": self._target_position.get("z"),
                     "e": self._target_position.get("e")
                 },
-                "machine": {  # Raw machine coordinates from M114
+                "machine": {
                     "x": self._current_position.get("x"),
                     "y": self._current_position.get("y"),
                     "z": self._current_position.get("z"),
                     "e": self._current_position.get("e")
                 }
             },
-            "path": self._get_path_summary(),  # Path history summary
-            "temperatures": temps,                      # tool0/bed/chamber: actual/target/offset
-            "connection": conn,                         # port/baudrate/printerProfile/state
-            "sd": self._get_sd_tree(),                  # REST style { files: [...] }
+            "path": self._get_path_summary(),
+            "temperatures": temps,
+            "connection": conn,
+            "sd": self._get_sd_tree(),
         }
-        return snapshot
 
     def _start_snapshot_timer(self):
-        """Start snapshot transmission timer."""
         with self._snapshot_timer_lock:
-            if self._snapshot_timer:  # Prevent duplicates
+            if self._snapshot_timer:
                 return
             interval = float(self._settings.get(["periodic_interval"]) or 1.0)
             self._snapshot_timer = RepeatedTimer(interval, self._snapshot_tick, run_first=True)
             self._snapshot_timer.start()
-            self._logger.info(f"[FACTOR] snapshot timer started every {interval}s")
+            self._logger.info(f"[FACTOR] Snapshot timer started: {interval}s")
 
     def _stop_snapshot_timer(self):
-        """Stop snapshot transmission timer."""
         with self._snapshot_timer_lock:
             if self._snapshot_timer:
                 self._snapshot_timer.cancel()
                 self._snapshot_timer = None
-                self._logger.info("[FACTOR] snapshot timer stopped")
+                self._logger.info("[FACTOR] Snapshot timer stopped")
 
     def _parse_m114_response(self, line):
-        """Parse M114 response to extract position data.
-        Example: Recv: ok X:6546.127 Y:2462.397 Z:10.7 E:161.602 Count: A:654612 B:246239 C:1070
-        """
-        import re
         try:
-            # Match X, Y, Z, E values
             x_match = re.search(r'X:([-\d.]+)', line)
             y_match = re.search(r'Y:([-\d.]+)', line)
             z_match = re.search(r'Z:([-\d.]+)', line)
@@ -1355,60 +1107,40 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
 
             with self._position_lock:
                 if x_match:
-                    new_x = float(x_match.group(1))
-                    self._logger.debug(f"[POSITION] Parsing X from line: {line[:100]}")
-                    self._logger.debug(f"[POSITION] Setting X: {self._current_position['x']} -> {new_x}")
-                    self._current_position["x"] = new_x
+                    self._current_position["x"] = float(x_match.group(1))
                 if y_match:
-                    new_y = float(y_match.group(1))
-                    self._logger.debug(f"[POSITION] Setting Y: {self._current_position['y']} -> {new_y}")
-                    self._current_position["y"] = new_y
+                    self._current_position["y"] = float(y_match.group(1))
                 if z_match:
                     self._current_position["z"] = float(z_match.group(1))
                 if e_match:
                     self._current_position["e"] = float(e_match.group(1))
         except Exception as e:
-            self._logger.debug(f"Error parsing M114 response: {e}")
+            self._logger.debug(f"M114 parse error: {e}")
 
     def _capture_position_offset(self):
-        """Capture machine coordinate offset at print start"""
         try:
             with self._position_lock:
-                # Store current machine coordinates as offset
                 self._position_offset["x"] = self._current_position.get("x")
                 self._position_offset["y"] = self._current_position.get("y")
                 self._position_offset["z"] = self._current_position.get("z")
                 self._position_offset["e"] = self._current_position.get("e")
-                self._logger.info(f"[POSITION] Captured offset at print start: {self._position_offset}")
+                self._logger.info(f"[POSITION] Offset captured: {self._position_offset}")
         except Exception as e:
-            self._logger.error(f"Error capturing position offset: {e}")
+            self._logger.error(f"Position offset capture error: {e}")
 
     def _reset_position_offset(self):
-        """Reset position offset after print ends"""
         with self._position_lock:
             self._position_offset = {"x": None, "y": None, "z": None, "e": None}
-            self._logger.info("[POSITION] Reset position offset")
+            self._logger.info("[POSITION] Offset reset")
 
     def _clear_path_history(self):
-        """Clear path history for new print"""
         with self._position_lock:
             self._path_history = []
             self._last_recorded_position = {"x": 0, "y": 0, "z": 0, "e": 0}
-            self._logger.info("[PATH] Path history cleared")
+            self._logger.info("[PATH] History cleared")
 
     def _add_path_segment(self, prev_x, prev_y, x, y, z, extrude=False, retract=0, tool=0):
-        """Add a path segment to history (OctoPrint GCode Viewer style)
-
-        Args:
-            prev_x, prev_y: Starting coordinates
-            x, y: Target coordinates
-            z: Z height
-            extrude: True if extruding (drawing line)
-            retract: -1 for retract, 0 for none, 1 for restart
-            tool: Tool/extruder number
-        """
         with self._position_lock:
-            # Skip if no actual movement
             if prev_x == x and prev_y == y:
                 return
 
@@ -1421,41 +1153,28 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                 "extrude": extrude,
                 "retract": retract,
                 "tool": tool,
-                "move": not extrude and retract == 0  # Travel move (no extrusion)
+                "move": not extrude and retract == 0
             }
 
             self._path_history.append(segment)
 
-            # Limit history size
             if len(self._path_history) > self._path_history_max:
-                # Remove oldest 10% when limit reached
                 remove_count = self._path_history_max // 10
                 self._path_history = self._path_history[remove_count:]
 
     def _get_path_history(self, limit=None, offset=0):
-        """Get path history for rendering
-
-        Args:
-            limit: Maximum number of segments to return (None for all)
-            offset: Starting index
-
-        Returns:
-            List of path segments
-        """
         with self._position_lock:
             if limit is None:
                 return self._path_history[offset:]
             return self._path_history[offset:offset + limit]
 
     def _get_path_summary(self):
-        """Get path history summary for status reporting"""
         with self._position_lock:
             total_segments = len(self._path_history)
             extrude_count = sum(1 for s in self._path_history if s.get("extrude"))
             move_count = sum(1 for s in self._path_history if s.get("move"))
             retract_count = sum(1 for s in self._path_history if s.get("retract") == -1)
 
-            # Calculate bounding box
             if total_segments > 0:
                 min_x = min(min(s["prevX"], s["x"]) for s in self._path_history)
                 max_x = max(max(s["prevX"], s["x"]) for s in self._path_history)
@@ -1474,7 +1193,6 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             }
 
     def _get_job_coordinates(self):
-        """Convert machine coordinates to job coordinates using offset"""
         with self._position_lock:
             result = {"x": None, "y": None, "z": None, "e": None}
 
@@ -1483,31 +1201,22 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                 offset = self._position_offset.get(axis)
 
                 if machine is not None and offset is not None:
-                    # Job coordinate = Machine coordinate - Start offset
                     result[axis] = machine - offset
                 elif machine is not None:
-                    # No offset yet (print not started), use machine coordinate
                     result[axis] = machine
 
             return result
 
     def _request_position_update(self):
-        """Request position update via M114 command"""
         try:
-            # Request M114 to get machine coordinates
             if self._printer.is_operational():
                 self._printer.commands("M114")
         except Exception as e:
-            self._logger.debug(f"Error requesting position: {e}")
+            self._logger.debug(f"Position request error: {e}")
 
     def on_gcode_received(self, comm_instance, line, *args, **kwargs):
-        """Hook to receive G-code responses from printer"""
-        # Check if this is an M114 response (must contain "X:" and NOT be a G-code command)
-        # M114 responses typically start with "ok" or "X:" and contain position data
         if line and "X:" in line:
-            # Exclude G-code commands (G0, G1, G28, etc.) from being parsed as M114
             line_upper = line.upper().strip()
-            # Only parse if it's NOT a G-code command being sent
             if not (line_upper.startswith("SEND:") or
                     line_upper.startswith("G0 ") or line_upper.startswith("G1 ") or
                     line_upper.startswith("G28") or line_upper.startswith("G29") or
@@ -1516,14 +1225,7 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
         return line
 
     def _parse_gcode_for_target_position(self, gcode, cmd):
-        """Parse G0/G1 commands to extract target position and record path history.
-        Example: G1 X100.5 Y50.2 Z10 E5.5 F3000
-
-        Based on OctoPrint GCode Viewer's worker.js parsing logic.
-        """
-        import re
         try:
-            # Check for positioning mode changes
             if gcode == "G90":
                 self._is_absolute_positioning = True
                 return
@@ -1531,17 +1233,14 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                 self._is_absolute_positioning = False
                 return
 
-            # Only process movement commands
             if gcode not in ["G0", "G1"]:
                 return
 
-            # Parse X, Y, Z, E values from command
             x_match = re.search(r'X([-\d.]+)', cmd, re.IGNORECASE)
             y_match = re.search(r'Y([-\d.]+)', cmd, re.IGNORECASE)
             z_match = re.search(r'Z([-\d.]+)', cmd, re.IGNORECASE)
             e_match = re.search(r'E([-\d.]+)', cmd, re.IGNORECASE)
 
-            # Calculate new position based on mode
             new_x = None
             new_y = None
             new_z = None
@@ -1550,14 +1249,12 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
             retract = 0
 
             with self._position_lock:
-                # Get previous position
                 prev_x = self._last_recorded_position.get("x", 0) or 0
                 prev_y = self._last_recorded_position.get("y", 0) or 0
                 prev_z = self._last_recorded_position.get("z", 0) or 0
                 prev_e = self._last_recorded_position.get("e", 0) or 0
 
                 if self._is_absolute_positioning:
-                    # Absolute mode (G90): directly set target position
                     if x_match:
                         new_x = float(x_match.group(1))
                         self._target_position["x"] = new_x
@@ -1579,18 +1276,14 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                     if e_match:
                         new_e = float(e_match.group(1))
                         self._target_position["e"] = new_e
-                        # Check extrusion (OctoPrint GCode Viewer style)
                         e_delta = new_e - prev_e
                         if e_delta > 0:
                             extrude = True
-                            retract = 0
                         elif e_delta < 0:
-                            extrude = False
-                            retract = -1  # Retract
+                            retract = -1
                     else:
                         new_e = prev_e
                 else:
-                    # Relative mode (G91): calculate target from current position
                     if x_match:
                         delta_x = float(x_match.group(1))
                         new_x = prev_x + delta_x
@@ -1616,23 +1309,18 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                         delta_e = float(e_match.group(1))
                         new_e = prev_e + delta_e
                         self._target_position["e"] = new_e
-                        # Check extrusion
                         if delta_e > 0:
                             extrude = True
-                            retract = 0
                         elif delta_e < 0:
-                            extrude = False
-                            retract = -1  # Retract
+                            retract = -1
                     else:
                         new_e = prev_e
 
-                # Update last recorded position
                 self._last_recorded_position["x"] = new_x
                 self._last_recorded_position["y"] = new_y
                 self._last_recorded_position["z"] = new_z
                 self._last_recorded_position["e"] = new_e
 
-            # Add to path history (only if X or Y movement)
             if x_match or y_match:
                 self._add_path_segment(
                     prev_x=prev_x,
@@ -1642,37 +1330,31 @@ class FactorPlugin(octoprint.plugin.SettingsPlugin,
                     z=new_z,
                     extrude=extrude,
                     retract=retract,
-                    tool=0  # TODO: Track tool changes with T commands
+                    tool=0
                 )
 
         except Exception as e:
-            self._logger.debug(f"Error parsing gcode for target position: {e}")
+            self._logger.debug(f"G-code parse error: {e}")
 
     def on_gcode_sent(self, comm_instance, phase, cmd, cmd_type, gcode, *args, **kwargs):
-        """Hook to capture sent G-code commands for target position tracking"""
         if gcode:
             self._parse_gcode_for_target_position(gcode, cmd)
         return None
 
     def _snapshot_tick(self):
-        """Snapshot timer callback function"""
-        # Do nothing if not connected (wait for MQTT reconnection)
         if not (self.is_connected and self.mqtt_client):
             return
-        # Request position update before creating snapshot
         self._request_position_update()
-        # Create and publish snapshot (reuse existing function)
         try:
-            # SECURITY: Do not publish to generic topic without instance ID
-            inst = self._get_required_instance_id(context="snapshot publish")
+            instance_id = self._get_required_instance_id(context="snapshot publish")
             payload = self._make_snapshot()
-            topic = f"{self._settings.get(['topic_prefix']) or 'octoprint'}/status/{inst}"
+            topic = f"{self._settings.get(['topic_prefix']) or 'octoprint'}/status/{instance_id}"
             self._publish_message(topic, json.dumps(payload))
             self._gc_expired_jobs()
         except InstanceIdRequiredError:
-            self._logger.debug("[FACTOR] Skipping snapshot: no instance ID configured")
+            pass
         except Exception as e:
-            self._logger.debug(f"snapshot tick error: {e}")
+            self._logger.debug(f"Snapshot tick error: {e}")
 
 
 def __plugin_load__():

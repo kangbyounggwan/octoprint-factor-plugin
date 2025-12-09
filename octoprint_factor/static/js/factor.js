@@ -22,12 +22,12 @@ $(function () {
     // Connection status management
     var ConnectionStatus = {
       statusColors: {
-        ready: { bg: "#d4edda", border: "#c3e6cb", icon: "✅" },
-        pending_registration: { bg: "#fff3cd", border: "#ffeeba", icon: "⏳" },
-        not_subscribed: { bg: "#fff3cd", border: "#ffeeba", icon: "⚠️" },
-        no_instance_id: { bg: "#f8d7da", border: "#f5c6cb", icon: "❌" },
-        disconnected: { bg: "#f8d7da", border: "#f5c6cb", icon: "🔴" },
-        error: { bg: "#f8d7da", border: "#f5c6cb", icon: "❌" }
+        ready: { bg: "#d4edda", border: "#c3e6cb", icon: "" },
+        pending_registration: { bg: "#fff3cd", border: "#ffeeba", icon: "" },
+        not_subscribed: { bg: "#fff3cd", border: "#ffeeba", icon: "" },
+        no_instance_id: { bg: "#f8d7da", border: "#f5c6cb", icon: "" },
+        disconnected: { bg: "#f8d7da", border: "#f5c6cb", icon: "" },
+        error: { bg: "#f8d7da", border: "#f5c6cb", icon: "" }
       },
 
       updateUI: function(status) {
