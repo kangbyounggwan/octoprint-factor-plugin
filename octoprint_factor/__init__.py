@@ -17,7 +17,7 @@ from octoprint.util import RepeatedTimer
 
 __plugin_name__ = "FACTOR Plugin"
 __plugin_pythoncompat__ = ">=3.8,<4"
-__plugin_version__ = "2.7.6"
+__plugin_version__ = "2.8.2"
 __plugin_identifier__ = "octoprint_factor"
 
 
@@ -71,6 +71,8 @@ class FactorPlugin(
         self._path_history = []
         self._path_history_max = 10000
         self._last_recorded_position = {"x": 0, "y": 0, "z": 0, "e": 0}
+        self._feed_rate = 100  # M220 S value (percentage)
+        self._flow_rate = 100  # M221 S value (percentage)
 
     def get_settings_defaults(self):
         return dict(
@@ -1080,6 +1082,10 @@ class FactorPlugin(
             "temperatures": temps,
             "connection": conn,
             "sd": self._get_sd_tree(),
+            "overrides": {
+                "feedrate": self._feed_rate,
+                "flowrate": self._flow_rate,
+            },
         }
 
     def _start_snapshot_timer(self):
@@ -1215,13 +1221,23 @@ class FactorPlugin(
             self._logger.debug(f"Position request error: {e}")
 
     def on_gcode_received(self, comm_instance, line, *args, **kwargs):
-        if line and "X:" in line:
+        if line:
             line_upper = line.upper().strip()
-            if not (line_upper.startswith("SEND:") or
-                    line_upper.startswith("G0 ") or line_upper.startswith("G1 ") or
-                    line_upper.startswith("G28") or line_upper.startswith("G29") or
-                    "G0 " in line_upper or "G1 " in line_upper):
-                self._parse_m114_response(line)
+            # Parse M220 (feed rate) response: "FR:100%" or "echo:FR:100%"
+            fr_match = re.search(r'FR[:\s]*(\d+)\s*%?', line_upper)
+            if fr_match:
+                self._feed_rate = int(fr_match.group(1))
+            # Parse M221 (flow rate) response: "Flow: 100%" or "echo:E0 Flow: 100%"
+            flow_match = re.search(r'FLOW[:\s]*(\d+)\s*%?', line_upper)
+            if flow_match:
+                self._flow_rate = int(flow_match.group(1))
+            # Parse M114 position response
+            if "X:" in line:
+                if not (line_upper.startswith("SEND:") or
+                        line_upper.startswith("G0 ") or line_upper.startswith("G1 ") or
+                        line_upper.startswith("G28") or line_upper.startswith("G29") or
+                        "G0 " in line_upper or "G1 " in line_upper):
+                    self._parse_m114_response(line)
         return line
 
     def _parse_gcode_for_target_position(self, gcode, cmd):
