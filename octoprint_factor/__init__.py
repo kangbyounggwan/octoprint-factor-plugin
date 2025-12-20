@@ -17,7 +17,7 @@ from octoprint.util import RepeatedTimer
 
 __plugin_name__ = "FACTOR Plugin"
 __plugin_pythoncompat__ = ">=3.8,<4"
-__plugin_version__ = "2.8.2"
+__plugin_version__ = "2.8.5"
 __plugin_identifier__ = "octoprint_factor"
 
 
@@ -73,6 +73,7 @@ class FactorPlugin(
         self._last_recorded_position = {"x": 0, "y": 0, "z": 0, "e": 0}
         self._feed_rate = 100  # M220 S value (percentage)
         self._flow_rate = 100  # M221 S value (percentage)
+        self._current_print_job_id = None  # Unique ID for current print job
 
     def get_settings_defaults(self):
         return dict(
@@ -156,9 +157,11 @@ class FactorPlugin(
             return
 
         if event == "PrintStarted":
+            self._current_print_job_id = str(uuid.uuid4())
             self._capture_position_offset()
             self._clear_path_history()
         elif event in ("PrintDone", "PrintFailed", "PrintCancelled"):
+            self._current_print_job_id = None
             self._reset_position_offset()
 
         topic_prefix = self._settings.get(["topic_prefix"])
@@ -176,6 +179,11 @@ class FactorPlugin(
         try:
             import paho.mqtt.client as mqtt
             import ssl
+
+            # Log instance_id status (connect anyway for registration flow)
+            instance_id = self._temp_instance_id or self._settings.get(["instance_id"])
+            if not instance_id:
+                self._logger.info("[FACTOR] No instance_id - MQTT will connect but await device registration")
 
             self.mqtt_client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
 
@@ -270,11 +278,11 @@ class FactorPlugin(
         if self.is_connected:
             instance_id = self._temp_instance_id or self._settings.get(["instance_id"])
             self._logger.info(f"[FACTOR] MQTT connected - Instance: {instance_id or '(none)'}")
-            self._start_snapshot_timer()
             if instance_id:
                 self._subscribe_mqtt_topics()
+                self._start_snapshot_timer()
             else:
-                self._logger.warning("[FACTOR] No instance ID, skipping subscription")
+                self._logger.warning("[FACTOR] No instance ID - skipping subscription and snapshot timer")
         else:
             self._logger.error(f"[FACTOR] MQTT connection failed: {rc}")
 
@@ -918,7 +926,11 @@ class FactorPlugin(
         try:
             instance_id = self._ensure_instance_id(force_new=False)
 
-            if self.is_connected and self.mqtt_client:
+            # Connect MQTT if not connected (needed for registration)
+            if not self.is_connected or not self.mqtt_client:
+                self._logger.info(f"[FACTOR] Connecting MQTT for device registration: {instance_id}")
+                self._connect_mqtt()
+            else:
                 self._subscribe_mqtt_topics()
 
             setup_url = f"https://factor.io.kr/setup/{instance_id}"
@@ -1054,6 +1066,7 @@ class FactorPlugin(
                 "time_left_origin": progress.get("printTimeLeftOrigin"),
             },
             "job": {
+                "id": self._current_print_job_id,
                 "file": {
                     "name": fileinfo.get("name"),
                     "origin": fileinfo.get("origin"),

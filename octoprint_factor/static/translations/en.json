@@ -27,6 +27,7 @@
   "status": {
     "checking": "Checking connection...",
     "retry": "Retry",
+    "register": "Register Device",
     "mqtt": "MQTT",
     "instanceId": "Instance ID",
     "subscribed": "Subscribed",
@@ -39,7 +40,7 @@
       "ready": "Connected and ready",
       "pending_registration": "Waiting for registration confirmation",
       "not_subscribed": "Connected but not subscribed - click Retry",
-      "no_instance_id": "No instance ID - click 'Open FACTOR Website' to start setup",
+      "no_instance_id": "Device not registered - click 'Register Device' to start",
       "disconnected": "MQTT broker not connected - click Retry",
       "error": "Connection error"
     }

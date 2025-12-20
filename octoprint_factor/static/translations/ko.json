@@ -27,6 +27,7 @@
   "status": {
     "checking": "연결 상태 확인 중...",
     "retry": "재시도",
+    "register": "장비 등록",
     "mqtt": "MQTT",
     "instanceId": "인스턴스 ID",
     "subscribed": "구독 상태",
@@ -39,7 +40,7 @@
       "ready": "연결됨 및 준비 완료",
       "pending_registration": "등록 확인 대기 중",
       "not_subscribed": "연결됨, 구독 안됨 - 재시도를 클릭하세요",
-      "no_instance_id": "인스턴스 ID 없음 - 'FACTOR 웹사이트 열기'를 클릭하여 설정을 시작하세요",
+      "no_instance_id": "장비가 등록되지 않음 - '장비 등록' 버튼을 클릭하세요",
       "disconnected": "MQTT 브로커에 연결되지 않음 - 재시도를 클릭하세요",
       "error": "연결 오류"
     }

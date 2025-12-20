@@ -57,10 +57,15 @@ $(function () {
         $("#fm-instance-id").text(status.instance_id || t("status.none"));
         $("#fm-subscribed-status").text(status.subscribed ? t("status.yes") : t("status.no"));
 
-        // Show/hide retry button based on status
-        if (status.status === "disconnected" || status.status === "not_subscribed") {
+        // Show/hide buttons based on status
+        if (status.status === "no_instance_id") {
+          $("#fm-register-btn").show();
+          $("#fm-retry-btn").hide();
+        } else if (status.status === "disconnected" || status.status === "not_subscribed") {
+          $("#fm-register-btn").hide();
           $("#fm-retry-btn").show();
         } else {
+          $("#fm-register-btn").hide();
           $("#fm-retry-btn").hide();
         }
 
@@ -167,6 +172,37 @@ $(function () {
 
           // Initial status fetch
           ConnectionStatus.fetch();
+
+          // Bind register button (opens setup URL for registration)
+          $("#fm-register-btn").on("click", function(e) {
+            e.stopPropagation();
+            $(this).prop("disabled", true);
+
+            // Get setup URL and open it
+            OctoPrint.ajax("GET", "plugin/octoprint_factor/setup-url")
+              .done(function(data) {
+                if (data && data.success && data.setup_url) {
+                  // Start setup subscription
+                  OctoPrint.ajax("POST", "plugin/octoprint_factor/start-setup")
+                    .done(function() {
+                      console.log("Started setup - subscribed to registration topic");
+                    });
+
+                  // Open setup URL in new tab
+                  window.open(data.setup_url, "_blank");
+
+                  // Start polling for registration completion
+                  setTimeout(function() {
+                    ConnectionStatus.fetch();
+                    $("#fm-register-btn").prop("disabled", false);
+                  }, 2000);
+                }
+              })
+              .fail(function(xhr) {
+                console.error("Failed to get setup URL:", xhr);
+                $("#fm-register-btn").prop("disabled", false);
+              });
+          });
 
           // Bind retry button
           $("#fm-retry-btn").on("click", function(e) {
